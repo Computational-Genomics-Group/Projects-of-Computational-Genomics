@@ -8,13 +8,16 @@
 #• It might be useful to use the function table() and to convert it in a data.frame(). 
 #• Sometime you might have 0 subject with genotype aa… c
 SNPdata <- read.table("C:\\Users\\Piermarco\\Documents\\GitHub\\BigDataBuona\\Projects-of-Computational-Genomics\\Project1\\SNPdatasmall.txt",
+SNPdata <- read.table("C:\\Users\\Piermarco\\Documents\\GitHub\\BigDataBuona\\Projects-of-Computational-Genomics\\Project1\\SNPdata.txt",
                       header = TRUE, sep = "")
 qcalculation <- function(SNPdata){
   for(col in 1:ncol(SNPdata)) {
+  for(row in 1:nrow(SNPdata)) {
     AA <- 0
     Aa <- 0
     aa <- 0
     for(row in 1:nrow(SNPdata)) {
+    for(col in 1:ncol(SNPdata)) {
       i <- SNPdata[row,col]
       if(i == 0){AA = AA + 1}
       if(i == 1){Aa = Aa + 1}
@@ -25,7 +28,6 @@ qcalculation <- function(SNPdata){
     q <- a_sum / sum_all
     print(row)
     print(q)
-    row.names(SNPdata) <- row
     vec[row] <- c(q)
   }
  
