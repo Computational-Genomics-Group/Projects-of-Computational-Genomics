@@ -58,6 +58,7 @@ HWEtest <- function(SNPdata){
   
   # initialization of output vector
   HWE_pvalue_vec = c(1:nrow(SNPdata))*0
+  
   # labeling of the vector
   names(HWE_pvalue_vec)<-row.names(SNPdata)
   
@@ -88,24 +89,6 @@ HWEtest <- function(SNPdata){
   
 }
 
-##################################
-# FILTERING IDEA
-
-# vector containing the height of 4 person
-v <- c(150,160,170,180)
-v
-# name of the person
-names(v) <- c("John","Sara","Paul","Carl")
-v
-# keep in the vector 'v' only person with height > 165
-v = v [v>165]
-v
-
-# I will apply the same idea in the following function
-
-################################
-
-
 VARIANTanalysis <- function(filepath, indCTRL, MAFth = 0.01, HWEalpha = 0.01){
   
   # read data from file path
@@ -114,35 +97,64 @@ VARIANTanalysis <- function(filepath, indCTRL, MAFth = 0.01, HWEalpha = 0.01){
   ## FILTERING OF THE RAW DATA
   
   # Selection of control group
-  SNPdata_ctrl = SNPdata[,indCTRL]
+  SNPdata_ctrl = SNPdata[ , indCTRL]
   
   # Check HWE assumption of th control group
   HWE_pvalue_ctrl <- HWEtest(SNPdata_ctrl)
   
   # Filter data with  HWE > HWEalpha
-  SNPdata_filt = SNPdata[HWE_pvalue_ctrl>HWEalpha,]
+  SNPdata_filt = SNPdata[HWE_pvalue_ctrl > HWEalpha, ]
   
   # Chech MAF assumption
   q_vec <- qcalculation(SNPdata_filt)
   
   # Filter data  with MAF > MAFth 
-  SNPdata_filt = SNPdata_filt[q_vec>MAFth,]
+  SNPdata_filt = SNPdata_filt[q_vec > MAFth, ]
   
   # calculation of the Chi_2 of the association test from the data
   
+  N = dim(SNPdata_filt)[2]
+  
+  # initialization of output vector
+  HWE_pvalue_vec = c(1:nrow(SNPdata_filt))*0
+  
+  # labeling of the vector
+  names(HWE_pvalue_vec)<-row.names(SNPdata_filt)
+  
+  for (row in 1:nrow(SNPdata_filt)) {
+    
+    AA <- 0
+    Aa <- 0
+    aa <- 0
+    
+    for (col in 1:ncol(SNPdata_filt)) {
+      
+      cell <- SNPdata_filt[row,col]
+      if(cell == 0){AA = AA + 1}
+      if(cell == 1){Aa = Aa + 1}
+      if(cell == 2){aa = aa + 1}
+    }
+    
+    q_est = (aa*2+Aa)/(2*N)
+    p_est = 1 - q_est
+    Chi_est = ((AA-N*p_est^2)^2 )/(N*p_est^2) + ((Aa-2*N*p_est*q_est)^2 )/(2*N*p_est*q_est) + ((aa-N*q_est^2)^2 )/(N*q_est^2)
+    
   # calutation of the p_value
+    
+    P_value_filt <- pchisq(Chi_est, 1, lower.tail = FALSE)
   
   
-}
+  }
+  }
 
 
 
 ## ---------------------------------------------------------------------------------------------------------------------
 ## Test of the functions
-
-setwd("C:/Users/Alessio/OneDrive - Università degli Studi di Padova/Bio_Eng/ComputationalGenomics/LAB/Groupwork1")
+setwd("C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project1")
+#setwd("C:/Users/Alessio/OneDrive - Università degli Studi di Padova/Bio_Eng/ComputationalGenomics/LAB/Groupwork1")
 SNPdata <- read.table("SNPdata.txt",header = TRUE, sep = "")
-
+path <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project1/SNPdata.txt"
 q_vec <- qcalculation(SNPdata)
 HWE_pvalue_vec <- HWEtest(SNPdata)
-Footer
+VARIANTanalysis(path, 1201)
