@@ -36,10 +36,8 @@ qcalculation <- function(SNPdata) {
     q_vec[row] = q_est
     
   }
-  
   return(q_vec)
 }
-
 
 #TASK1: Take as input a numeric data matrix that is supposed to have the same format of the genetic data 
 #provided in stem 
@@ -51,11 +49,10 @@ qcalculation <- function(SNPdata) {
 #matrix
 #Suggestion: be careful when you use pchisq(). The probability it gives as output by default is P[X ≤ chi^2
 
-
 HWEtest <- function(SNPdata){
   
-  N = dim(SNPdata)[2]
-  
+  N = dim(SNPdata)[1]
+ 
   # initialization of output vector
   HWE_pvalue_vec = c(1:nrow(SNPdata))*0
   
@@ -93,17 +90,19 @@ VARIANTanalysis <- function(filepath, indCTRL, MAFth = 0.01, HWEalpha = 0.01){
   
   # read data from file path
   SNPdata <- read.table(filepath, header = TRUE, sep = "")
-  
   ## FILTERING OF THE RAW DATA
   
   # Selection of control group
-  SNPdata_ctrl = SNPdata[ , indCTRL]
+  SNPdata_ctrl = SNPdata[ , c(indCTRL:2000)]
   
   # Check HWE assumption of th control group
   HWE_pvalue_ctrl <- HWEtest(SNPdata_ctrl)
   
-  # Filter data with  HWE > HWEalpha
-  SNPdata_filt = SNPdata[HWE_pvalue_ctrl > HWEalpha, ]
+  # Filter data with  HWE > HWEalpha 
+  # !!!WARNING LOGIC CHECK I HAVE CHANGED FROM --->SNPdata_filt = SNPdata[HWE_pvalue_ctrl > HWEalpha, ] TO -->!!!
+  #with 0 condition take 0 element
+  vec <- which(HWE_pvalue_ctrl > HWEalpha)
+  SNPdata_filt = SNPdata_ctrl[which(HWE_pvalue_ctrl > HWEalpha), ]
   
   # Chech MAF assumption
   q_vec <- qcalculation(SNPdata_filt)
@@ -135,18 +134,18 @@ VARIANTanalysis <- function(filepath, indCTRL, MAFth = 0.01, HWEalpha = 0.01){
       if(cell == 2){aa = aa + 1}
     }
     
-    q_est = (aa*2+Aa)/(2*N)
-    p_est = 1 - q_est
-    Chi_est = ((AA-N*p_est^2)^2 )/(N*p_est^2) + ((Aa-2*N*p_est*q_est)^2 )/(2*N*p_est*q_est) + ((aa-N*q_est^2)^2 )/(N*q_est^2)
+    q_est_filt = (aa*2+Aa)/(2*N)
+    p_est_filt = 1 - q_est
+    Chi_est_filt = ((AA-N*p_est^2)^2 )/(N*p_est^2) + ((Aa-2*N*p_est*q_est)^2 )/(2*N*p_est*q_est) + ((aa-N*q_est^2)^2 )/(N*q_est^2)
     
   # calutation of the p_value
     
-    P_value_filt <- pchisq(Chi_est, 1, lower.tail = FALSE)
+    P_value_filt <- pchisq(Chi_est_filt, 1, lower.tail = FALSE)
   
   
   }
   }
-
+VARIANTanalysis(path, 1201)
 
 
 ## ---------------------------------------------------------------------------------------------------------------------
@@ -157,4 +156,4 @@ SNPdata <- read.table("SNPdata.txt",header = TRUE, sep = "")
 path <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project1/SNPdata.txt"
 q_vec <- qcalculation(SNPdata)
 HWE_pvalue_vec <- HWEtest(SNPdata)
-VARIANTanalysis(path, 1201)
+
