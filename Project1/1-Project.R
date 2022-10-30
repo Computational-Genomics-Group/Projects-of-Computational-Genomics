@@ -7,9 +7,27 @@
 #Suggestion: 
 #• It might be useful to use the function table() and to convert it in a data.frame(). 
 #• Sometime you might have 0 subject with genotype aa… c
-
+# SNPdata <- read.table("SNPdata.txt",header = TRUE, sep = "") * Just to visualize the data
+# print(SNPdata[1,1])
 qcalculation <- function(SNPdata){
+  N <- ncol(SNPdata)
+  res <- c(1:nrow(SNPdata))
+  for(row in 1:nrow(SNPdata)) {
+    AA <- 0
+    Aa <- 0
+    aa <- 0
+    for(col in 1:ncol(SNPdata)) {
+      ind_val <- SNPdata[row,col]
+      if(ind_val == 0){AA = AA + 1}
+      if(ind_val == 1){Aa = Aa + 1}
+      if(ind_val == 2){aa = aa + 1}
+    }
+    
+    q <- (aa*2 + Aa) / (2*N)
+    res[row] <- q
+  }
   
+  return(res)
 }
 #TASK1: Take as input a numeric data matrix that is supposed to have the same format of the genetic data 
 #provided in stem 
