@@ -50,7 +50,7 @@ HWTest <- function(SNPdata) {
     O = c(AA, Aa, aa)
     q = (aa * 2 + Aa) / (2 * N)
     p = 1 - q
-    cat(O,"\n")
+    #cat(O,"\n")
     
     ## 2. Expected frequencies --------------------------------------------
     AA = length(d[d == 0])
@@ -118,7 +118,7 @@ VARIANTanalysis <-
   ))
   
   ##cal q values following Benjamini-Hochberg Procedure
-  r=order(pvalues,decrease=FALSE)
+  r=order(unlist(pvalues),decreasing=FALSE)
   qvalues=pvalues*N/r
   
   ## Final Output
@@ -134,9 +134,9 @@ VARIANTanalysis <-
       "qval")
   return(out)
 }
+varanal=as.data.frame(VARIANTanalysis("SNPdata.txt",1201:2000,MAFth = 0.05))
 
 
 SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
 vec_q<-as.data.frame(qcalculation(SNPdata))
 HWE_pvalue_vec <- HWEtest(SNPdata)
-varanal=as.data.frame(VARIANTanalysis("SNPdata.txt",1201:2000,MAFth = 0.05))
