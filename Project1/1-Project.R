@@ -41,6 +41,37 @@ qcalculation <- function(SNPdata){
                                                                                                  
 
 HWEtest <- (SNPdata){
+  N <- ncol(SNPdata)
+  
+ 
+  HWE_pvalue <- c(1:nrow(SNPdata))
+
+  names(HWE_pvalue) <- row.names(SNPdata)
+  
+  for (row in 1:nrow(SNPdata)) {
+    
+    AA <- 0
+    Aa <- 0
+    aa <- 0
+    
+    for (col in 1:ncol(SNPdata)) {
+      
+      cell <- SNPdata[row,col]
+      if(cell == 0){AA = AA + 1}
+      if(cell == 1){Aa = Aa + 1}
+      if(cell == 2){aa = aa + 1}
+    }
+    
+    q = (aa*2+Aa)/(2*N)
+    p = 1 - q
+    Chi = ((AA-N*p^2)^2 )/(N*p^2) + ((Aa-2*N*p*q)^2 )/(2*N*p*q) + ((aa-N*q^2)^2 )/(N*q^2)
+    
+    pvalue <- pchisq(Chi, 1, ncp = 0, lower.tail = FALSE)
+    
+    HWE_pvalue[row] = pvalue
+    
+  }
+  return(HWE_pvalue)
   
 }
 
