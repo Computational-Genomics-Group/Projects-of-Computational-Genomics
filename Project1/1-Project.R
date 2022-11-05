@@ -67,8 +67,8 @@ VARIANTanalysis <-
            HWEalpha = 0.01) {
   ## Input and parameters setup ----------------------------------------------
   SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
-  SNPdata = SNPdata[qcalculation(SNPdata[indCTRL,]) > MAFth & 
-                    HWEtest(SNPdata[indCTRL,]) > HWEalpha, ]
+  SNPdata = SNPdata[qcalculation(SNPdata[,indCTRL]) > MAFth & 
+                    HWEtest(SNPdata[,indCTRL]) > HWEalpha, ]
   `%notin%` <- Negate(`%in%`)
   N = dim(SNPdata)[2]
   indPATI = 1:N
@@ -101,7 +101,7 @@ VARIANTanalysis <-
         t(apply(SNPdata[, indPATI], 1, calcallele))
       ))
   
-  t=as.data.frame(t((apply(SNPdata[indCTRL],1, calcchip))))
+  t=as.data.frame(t((apply(SNPdata[,indCTRL],1, calcchip))))
   chisquared=t[,1]                                    # chisquared
   pvalues = t[,2]                                     # pvalues
   
