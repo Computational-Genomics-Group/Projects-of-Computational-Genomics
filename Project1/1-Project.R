@@ -40,7 +40,7 @@ qcalculation <- function(SNPdata){
 #Suggestion: be careful when you use pchisq(). The probability it gives as output by default is P[X ≤ chi^2
                                                                                                  
 
-HWEtest <- (SNPdata){
+HWEtest <- function(SNPdata){
   N <- ncol(SNPdata)
   
  
