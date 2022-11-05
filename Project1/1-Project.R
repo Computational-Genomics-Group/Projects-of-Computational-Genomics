@@ -1,12 +1,7 @@
-#TASK1: Take as input a numeric data matrix that is supposed to have the same format of the genetic data 
-#provided in stem
-#TASK2: Calculates the minor allele frequency q for each SNP
-#TASK3: Return the minor allele frequency of each SNP as a vector of numeric values with names corresponding 
-#to the SNP IDs (chromosome_position, e.g. “chr1_11169676”) with the same order they had in the 
-#input matrix
-#Suggestion: 
-#• It might be useful to use the function table() and to convert it in a data.frame(). 
-#• Sometime you might have 0 subject with genotype aa… c
+# TASK1 -------------------------------------------------------------------
+# Take as input a numeric data matrix that is supposed to have the same format of the genetic data 
+# provided in stem 
+
 
 qcalculation <- function(SNPdata) {
   calcq <- function(d) {
@@ -15,95 +10,71 @@ qcalculation <- function(SNPdata) {
     Aa = length(d[d == 1])
     aa = length(d[d == 2])
     q = (aa * 2 + Aa) / (2 * N)
-    ##cat(AA,Aa,aa,N,q,"\n") #debug
     return(q)
   }
   
-  a = apply(SNPdata, 1, calcq) # apply calcq to rows
-  return(as.data.frame(a))
+  out = as.data.frame(apply(SNPdata, 1, calcq)) # apply calcq to rows
+  colnames(out)="MAF"
+  return(out)
 }
-#TASK1: Take as input a numeric data matrix that is supposed to have the same format of the genetic data 
-#provided in stem 
-#TASK2: Compute a HWE test for each SNP given as input 
-#• By calculating the chi^2 obs from the data
-#• By computing the p value using the function pchisq (DO NOT use directly the chisq.test() function)
-#TASK3: Return the HWE test p-values for each SNP as a vector of numeric values with names corresponding to 
-#the SNP IDs (chromosome_position, e.g. “chr1_11169676”) with the same order they had in the input 
-#matrix
-#Suggestion: be careful when you use pchisq(). The probability it gives as output by default is P[X ≤ chi^2
+
+
+# TASK2 -------------------------------------------------------------------
+# Compute a HWE test for each SNP given as input 
+# • By calculating the chi^2 obs from the data
+# • By computing the p value using the function pchisq (DO NOT use directly the chisq.test() function)
                                                                                                  
 
-HWTest <- function(SNPdata) {
-  calcchi <- function(d) {
-    # 1. Calculate observed frequencies
-    # 2. Calculate expected frequencies
-    # 3. Calculate chi_value
-    # 4. calculate p-value
-    
-    # d=t(SNPdata[1,])
+HWEtest <- function(SNPdata) {
+  calcp<- function(d) {
     N = length(d)
     
-    ## 1. Calculate observed values
+    ## Calculate observed values -------------------------------------------
     AA = length(d[d == 0])
     Aa = length(d[d == 1])
     aa = length(d[d == 2])
     O = c(AA, Aa, aa)
+    
+    ## Expected frequencies ------------------------------------------------
     q = (aa * 2 + Aa) / (2 * N)
     p = 1 - q
-    #cat(O,"\n")
-    
-    ## 2. Expected frequencies --------------------------------------------
-    AA = length(d[d == 0])
-    Aa = length(d[d == 1])
-    aa = length(d[d == 2])
-    #    m = rep(N, 3)
-    #    E = c(AA, Aa, aa)
-    #    E = round(E * m / N, digits = 0) # vector containing con#catenation of expected frequencies for control and patients
-    #    cat(E,"\n")
-    #    
-    #    ## 3. Calculate chi-squared --------------------------------------------
-    #    # method 1
-    #    chi_squared = sum((O - E) ^ 2 / E)
-    
-    # method2
     prob_expec=c(p^2,2*p*q,q^2)
+    
+    ## ChiSquared ----------------------------------------------------------
     chi_squared=sum((O-N*prob_expec)^2/(N*prob_expec))
     
-    ## 4. Calculate pvalues -------------------------------------------------
+    ## pvalue --------------------------------------------------------------
     pvalue <- pchisq(chi_squared, 1, lower.tail = FALSE)
     
-    
-    return(c(chi_squared, pvalue))
+    return(pvalue)
   }
   
-  ## Apply calcchi to rows of SNPdata
-  # Transpose result in order to have chr as rows and [chisquare,pvalue] as columns
-  a = as.data.frame(t(apply(SNPdata, 1, calcchi)))
-  return(a)
+  out = as.data.frame(apply(SNPdata, 1, calcp))
+  colnames(out)=c("pvalue")
+  return(out)
 }
+
+# TASK3 -------------------------------------------------------------------
+# Return the HWE test p-values for each SNP as a vector of numeric values with names corresponding to 
+# the SNP IDs (chromosome_position, e.g. “chr1_11169676”) with the same order they had in the input 
+# matrix
+# Suggestion: be careful when you use pchisq(). The probability it gives as output by default is P[X ≤ chi^2
 
 VARIANTanalysis <-
   function(filepath,
            indCTRL,
            MAFth = 0.01,
            HWEalpha = 0.01) {
-  ##### Input and parameters setup
+  ## Input and parameters setup ----------------------------------------------
   SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
-  SNPdata = SNPdata[qcalculation(SNPdata) > MAFth |
-                      HWTest(SNPdata)[2] > HWEalpha, ]
+  SNPdata = SNPdata[qcalculation(SNPdata[indCTRL,]) > MAFth & 
+                      HWEtest(SNPdata[indCTRL,]) > HWEalpha, ]
   `%notin%` <- Negate(`%in%`)
   N = dim(SNPdata)[2]
   indPATI = 1:N
   indPATI = indPATI[indPATI %notin% indCTRL]
   
-  ##### calcchi and calcallele function definition
-  t=HWTest(SNPdata[indCTRL])
-  chisq = t[1]
-  pvalues = t[2]
-  maf = qcalculation(SNPdata)
-  
-  
-  # "AA_ctrl","Aa_ctrl","aa_ctrl","AA_case","Aa_case","aa_case"
+  ## Function definitions
   calcallele <- function(d, indCTRL, indPATI) {
     AA = length(d[d == 0])
     Aa = length(d[d == 1])
@@ -112,31 +83,43 @@ VARIANTanalysis <-
     return(O)
   }
   
-  O = as.data.frame(cbind(
-    t(apply(SNPdata[, indCTRL], 1, calcallele)),
-    t(apply(SNPdata[, indPATI], 1, calcallele))
-  ))
+  calcchip<- function(d) {
+    N = length(d)
+    O <- calcallele(d)
+    q = (O[3]* 2 + O[2]) / (2 * N)
+    p = 1 - q
+    prob_expec=c(p^2,2*p*q,q^2)
+    chi_squared=sum((O-N*prob_expec)^2/(N*prob_expec))
+    pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
+    return(c(chi_squared, pvalue))
+  }
   
-  ##cal q values following Benjamini-Hochberg Procedure
-  r=order(unlist(pvalues),decreasing=FALSE)
-  qvalues=pvalues*N/r
+  
+  ## Calculations ------------------------------------------------------------
+  O = as.data.frame(cbind(                            #observed data
+        t(apply(SNPdata[, indCTRL], 1, calcallele)),
+        t(apply(SNPdata[, indPATI], 1, calcallele))
+      ))
+  
+  t=as.data.frame(t((apply(SNPdata[indCTRL],1, calcchip))))
+  chisquared=t[,1]                                    # chisquared
+  pvalues = t[,2]                                     # pvalues
+  
+  ### calculate q                                     # qvalues
+  r = order(unlist(pvalues), decreasing = FALSE)      
+  #qvalues = pvalues * N / r
+  qvalues = pvalues * r / N # statistical book alpha*rank/total
   
   ## Final Output
   out = as.data.frame(cbind(O, pvalues, qvalues))
-  colnames(out) <-
-    c("AA_ctrl",
-      "Aa_ctrl",
-      "aa_ctrl",
-      "AA_case",
-      "Aa_case",
-      "aa_case",
-      "pval",
-      "qval")
-  return(out)
+  colnames(out) <-c("AA_ctrl","Aa_ctrl","aa_ctrl","AA_case","Aa_case","aa_case","pval","qval")
+  return(as.data.frame(out))
 }
-varanal=as.data.frame(VARIANTanalysis("SNPdata.txt",1201:2000,MAFth = 0.05))
 
 
+# tests -------------------------------------------------------------------
 SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
-vec_q<-as.data.frame(qcalculation(SNPdata))
-HWE_pvalue_vec <- HWEtest(SNPdata)
+vec_maf <- qcalculation(SNPdata = SNPdata)
+vec_HWE_chi_pvalue <- HWEtest(SNPdata)
+vec_VarAnal = VARIANTanalysis("SNPdata.txt", 1201:2000, MAFth = 0.05)
+
