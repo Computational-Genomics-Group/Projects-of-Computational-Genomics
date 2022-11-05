@@ -68,7 +68,7 @@ VARIANTanalysis <-
   ## Input and parameters setup ----------------------------------------------
   SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
   SNPdata = SNPdata[qcalculation(SNPdata[indCTRL,]) > MAFth & 
-                      HWEtest(SNPdata[indCTRL,]) > HWEalpha, ]
+                    HWEtest(SNPdata[indCTRL,]) > HWEalpha, ]
   `%notin%` <- Negate(`%in%`)
   N = dim(SNPdata)[2]
   indPATI = 1:N
