@@ -12,8 +12,7 @@ qcalculation <- function(SNPdata) {
     q = min( ((aa * 2 + Aa) / (2 * N)),
              ((AA * 2 + Aa) / (2 * N)),
              na.rm = TRUE
-        )
-    
+    )
     return(q)
   }
   
@@ -48,7 +47,7 @@ HWEtest <- function(SNPdata) {
     chi_squared=sum((O-N*prob_expec)^2/(N*prob_expec))
     
     ## pvalue --------------------------------------------------------------
-    pvalue <- pchisq(chi_squared, 1, lower.tail = FALSE)
+    pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
     
     return(pvalue)
   }
