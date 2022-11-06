@@ -9,7 +9,11 @@ qcalculation <- function(SNPdata) {
     AA = length(d[d == 0])
     Aa = length(d[d == 1])
     aa = length(d[d == 2])
-    q = (aa * 2 + Aa) / (2 * N)
+    q = min( ((aa * 2 + Aa) / (2 * N)),
+             ((AA * 2 + Aa) / (2 * N)),
+             na.rm = TRUE
+        )
+    
     return(q)
   }
   
@@ -90,7 +94,7 @@ VARIANTanalysis <-
     p = 1 - q
     prob_expec=c(p^2,2*p*q,q^2)
     chi_squared=sum((O-N*prob_expec)^2/(N*prob_expec))
-    pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
+    pvalue <- pchisq(chi_squared, 1, lower.tail = FALSE)
     return(c(chi_squared, pvalue))
   }
   
