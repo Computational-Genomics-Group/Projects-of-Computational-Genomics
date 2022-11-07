@@ -89,8 +89,13 @@ VARIANTanalysis <-
                   O[3]+O[6]) #aa
                 ,2)
     E= round(rows*columns/N,digits = 0)           
-    chi_squared=sum((O-E)^2/E)
-    pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
+    t=(O-E)^2/E
+    chi_squared=sum(t,na.rm = TRUE)
+    if(NaN %in% t | NA %in% t){
+      pvalue <- pchisq(chi_squared, 1, lower.tail = FALSE)
+    }else{
+      pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
+    }
     return(c(chi_squared, pvalue))
   }
   
