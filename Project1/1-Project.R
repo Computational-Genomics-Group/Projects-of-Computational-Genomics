@@ -47,7 +47,7 @@ HWEtest <- function(SNPdata) {
     chi_squared=sum((O-N*prob_expec)^2/(N*prob_expec))
     
     ## pvalue --------------------------------------------------------------
-    pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
+    pvalue <- pchisq(chi_squared, 1, lower.tail = FALSE)
     
     return(pvalue)
   }
@@ -79,6 +79,7 @@ VARIANTanalysis <-
   
   ## Function definitions
   calcallele <- function(d, indCTRL, indPATI) {
+    # return counts of AA, Aa, aa
     AA = length(d[d == 0])
     Aa = length(d[d == 1])
     aa = length(d[d == 2])
@@ -86,14 +87,16 @@ VARIANTanalysis <-
     return(O)
   }
   
-  calcchip<- function(d) {
+  calcchip<- function(d, indCTRL, indPATI) {
+    # return chisquared and pvalue
     N = length(d)
-    O <- calcallele(d)
-    q = (O[3]* 2 + O[2]) / (2 * N)
-    p = 1 - q
-    prob_expec=c(p^2,2*p*q,q^2)
-    chi_squared=sum((O-N*prob_expec)^2/(N*prob_expec))
-    pvalue <- pchisq(chi_squared, 1, lower.tail = FALSE)
+    O <- c(calcallele(d[indCTRL]),    # return count AA,Aa,aa from controll
+           calcallele(d[indPATI]))    # return count AA,Aa,aa from patients 
+    rows=c(rep(length(indCTRL),3),rep(length(indPATI),3)) # vector "800"x3 "1200"x3
+    columns=rep(c(O[1]+O[4],O[2]+O[5],O[3]+O[6]),2)       # vector "AA_ctrl+AA_pat, Aa..., aa..."x2
+    E= round(rows*columns/N,digits = 0)                   # vector 800*"AA_ctrl+AA_pat"/2000 ...
+    chi_squared=sum((O-E)^2/E)
+    pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
     return(c(chi_squared, pvalue))
   }
   
@@ -104,14 +107,13 @@ VARIANTanalysis <-
         t(apply(SNPdata[, indPATI], 1, calcallele))
       ))
   
-  t=as.data.frame(t((apply(SNPdata[,indCTRL],1, calcchip))))
+  t=as.data.frame(t((apply(SNPdata, 1, calcchip, indCTRL=indCTRL, indPAT=indPATI))))
   chisquared=t[,1]                                    # chisquared
   pvalues = t[,2]                                     # pvalues
   
   ### calculate q                                     # qvalues
   r = order(unlist(pvalues), decreasing = FALSE)      
-  #qvalues = pvalues * N / r
-  qvalues = pvalues * r / N # statistical book alpha*rank/total
+  qvalues = pvalues * N / r
   
   ## Final Output
   out = as.data.frame(cbind(O, pvalues, qvalues))
