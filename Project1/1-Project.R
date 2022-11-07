@@ -16,7 +16,7 @@ qcalculation <- function(SNPdata) {
     return(q)
   }
   
-  out = as.data.frame(apply(SNPdata, 1, calcq)) # apply calcq to rows
+  out = as.data.frame(apply(SNPdata, 1, calcq)) 
   colnames(out)="MAF"
   return(out)
 }
@@ -68,18 +68,8 @@ VARIANTanalysis <-
            indCTRL,
            MAFth = 0.01,
            HWEalpha = 0.01) {
-  ## Input and parameters setup ----------------------------------------------
-  SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
-  SNPdata = SNPdata[qcalculation(SNPdata[,indCTRL]) > MAFth & 
-                    HWEtest(SNPdata[,indCTRL]) > HWEalpha, ]
-  `%notin%` <- Negate(`%in%`)
-  N = dim(SNPdata)[2]
-  indPATI = 1:N
-  indPATI = indPATI[indPATI %notin% indCTRL]
-  
-  ## Function definitions
+  ## Functions definitions 
   calcallele <- function(d, indCTRL, indPATI) {
-    # return counts of AA, Aa, aa
     AA = length(d[d == 0])
     Aa = length(d[d == 1])
     aa = length(d[d == 2])
@@ -88,18 +78,30 @@ VARIANTanalysis <-
   }
   
   calcchip<- function(d, indCTRL, indPATI) {
-    # return chisquared and pvalue
+    # return chisquared and pvalue 
     N = length(d)
-    O <- c(calcallele(d[indCTRL]),    # return count AA,Aa,aa from controll
-           calcallele(d[indPATI]))    # return count AA,Aa,aa from patients 
-    rows=c(rep(length(indCTRL),3),rep(length(indPATI),3)) # vector "800"x3 "1200"x3
-    columns=rep(c(O[1]+O[4],O[2]+O[5],O[3]+O[6]),2)       # vector "AA_ctrl+AA_pat, Aa..., aa..."x2
-    E= round(rows*columns/N,digits = 0)                   # vector 800*"AA_ctrl+AA_pat"/2000 ...
+    O <- c(calcallele(d[indCTRL]),    
+           calcallele(d[indPATI]))   
+    rows=c(rep(length(indCTRL),3),
+           rep(length(indPATI),3)) 
+    columns=rep(c(O[1]+O[4], #AA
+                  O[2]+O[5], #Aa
+                  O[3]+O[6]) #aa
+                ,2)
+    E= round(rows*columns/N,digits = 0)           
     chi_squared=sum((O-E)^2/E)
     pvalue <- pchisq(chi_squared, 2, lower.tail = FALSE)
     return(c(chi_squared, pvalue))
   }
   
+  `%notin%` <- Negate(`%in%`)
+  
+  ## Input and parameters setup ----------------------------------------------
+  SNPdata <- read.table("SNPdata.txt", header = TRUE, sep = "\t")
+  SNPdata = SNPdata[qcalculation(SNPdata[,indCTRL]) > MAFth & 
+                    HWEtest(SNPdata[,indCTRL]) > HWEalpha , ]
+  N = dim(SNPdata)[2]
+  indPATI = (1:N)[(1:N) %notin% indCTRL]
   
   ## Calculations ------------------------------------------------------------
   O = as.data.frame(cbind(                            #observed data
@@ -108,10 +110,9 @@ VARIANTanalysis <-
       ))
   
   t=as.data.frame(t((apply(SNPdata, 1, calcchip, indCTRL=indCTRL, indPAT=indPATI))))
-  chisquared=t[,1]                                    # chisquared
-  pvalues = t[,2]                                     # pvalues
+  chisquared=t[,1]
+  pvalues = t[,2]
   
-  ### calculate q                                     # qvalues
   r = order(unlist(pvalues), decreasing = FALSE)      
   qvalues = pvalues * N / r
   
