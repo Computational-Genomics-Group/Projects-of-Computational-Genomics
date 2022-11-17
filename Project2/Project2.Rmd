@@ -1,0 +1,55 @@
+---
+title: "Project2"
+output: html_document
+date: "2022-11-17"
+---
+
+##MvAplot
+1. Take as input 
+  • exprData: a numeric data matrix that is supposed to have the same format of the raw transcript 
+    data provided in stem (i.e. genes’IDs on rows and subjects’IDs on columns)
+  • pdffilename : the name of the .pdf file where to save the plots
+2. Generates a .pdf file with MvA plots of each sample vs. sample 1
+
+```{r}
+MvAplot <- function(exprData, pdffilename){
+  
+  
+  
+  
+}
+
+```
+##TMMnorm
+1. Takes as input 
+  • exprData: a numeric data matrix that is supposed to have     the same format of the raw transcript 
+    data provided in stem (i.e. genes’IDs on rows and            subjects’IDs on columns)
+  • annot: a data frame that is supposed to have the same        format of the annotation data provided in 
+    stem
+  • Atrim: a vector of 2 elements indicating the lower and       upper thresholds to trim the most extreme 
+    values of A (where A is the average in log2 scale) 
+  • Mtrim: a number between 0 and 1 indicating the fraction    of observations to be deleted from each 
+  end (positive and negative values) of the sorted vector M    before calculating the mean (where Ms
+  are the log ratios defined as in the MvA plot
+  
+2. The function TMMnorm
+  • Scale the data by their sequencing depth and multiply by     10^6
+  • Calculates the scaling factors SF (with respect to sample     1) by trimming the most extreme values of 
+    A and taking the trimmed means of M values (suggestion:        use the R function mean)
+  • Normalizes the data by their scaling factors SF with         respect to sample 1
+  • Scale the genes (in the original scale, not in log scale)     by their length and multiply by 10^3
+  • Returns a list of 2 elements: i) the vector of the           scaling factors; ii) the normalized matrix (in the 
+    original scale, not in log scale)
+####Suggestion: Generates a .pdf file with MvA plots before      and after the normalization to check your work (use the function MvAplot)
+
+```{r}
+TMMnorm <- function(exprData,
+                    annot,
+                    Atrim = c(0,8),
+                    Mtrim = 0.02){
+  
+  
+  
+  
+}
+```
