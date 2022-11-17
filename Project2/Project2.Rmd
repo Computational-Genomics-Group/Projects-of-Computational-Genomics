@@ -3,6 +3,13 @@ title: "Project2"
 output: html_document
 date: "2022-11-17"
 ---
+##Input Data 
+```{r}
+path <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count.txt"
+RawTranscript <- read.table(path, header = TRUE, sep = "\t")
+
+```
+
 
 ##MvAplot
 1. Take as input 
