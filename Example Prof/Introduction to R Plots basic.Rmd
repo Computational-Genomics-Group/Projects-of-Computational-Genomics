@@ -21,15 +21,16 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 ```{r}
 # dataset
-datafilename="http://personality-project.org/r/datasets/R.appendix1.data"
-data.ex1=read.table(datafilename,header=T) 
+datafilename ="http://personality-project.org/r/datasets/R.appendix1.data"
+data.ex1 = read.table(datafilename,header=T) 
 print(data.ex1)
 ```
 
 
 ```{r}
 # do the analysis of variance
-aov.ex1 = aov(Alertness~Dosage,data=data.ex1)  
+aov.ex1 = aov(Alertness~Dosage,data= data.ex1)
+data1 <- data.ex1
 summary(aov.ex1) #show the summary table
 ```
 
@@ -69,13 +70,13 @@ print(data.ex2)
 ```
 
 ```{r}
-aov.ex2 = aov(Alertness~Dosage+Gender+Gender*Dosage,data=data.ex2)   #do the analysis of variance
+aov.ex2 = aov(Alertness ~ Dosage + Gender + Gender * Dosage,data=data.ex2)   #do the analysis of variance
 summary(aov.ex2)                                       #show the summary table
 ```
 
 ```{r}
 print(model.tables(aov.ex2,"means"))
-boxplot(Alertness~Dosage+Gender+Dosage*Gender,data=data.ex2) 
+boxplot(Alertness ~ Dosage + Gender + Dosage * Gender,data = data.ex2) 
 ```
 
 ```{r}
