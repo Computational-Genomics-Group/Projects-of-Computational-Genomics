@@ -35,13 +35,19 @@ MvAplot <- function(exprData, pdffilename){
   
   pdf(pdffilename) #specify the deftination of the pdf file 
   
+  vec <- t(exprData[ , 2])
   
+  for (i in 2:N) { #saving plot inside pdf file 
     
     M = log( vec, base = 2)
     M = log(vec, base = 2) - log(t(exprData[ , i]), base = 2 )
     A = (log(vec, base = 2) + log(t(exprData[ , i]), base = 2 )) / 2
     
           }
+    plot(A, M)
+    
+  }
+  
   dev.off()#turn off pdf plotting
   
 }
