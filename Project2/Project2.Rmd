@@ -3,11 +3,20 @@ title: "Project2"
 output: html_document
 date: "2022-11-17"
 ---
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
 ##Input Data 
 ```{r}
 path <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count.txt"
+path1 <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count_annot.txt"
+
 RawTranscript <- read.table(path, header = TRUE, sep = "\t")
 
+RawTranscript_annot <-  read.table(path1, header = TRUE, sep = "\t")
+
+RawTranscript
 ```
 
 
@@ -18,11 +27,22 @@ RawTranscript <- read.table(path, header = TRUE, sep = "\t")
   • pdffilename : the name of the .pdf file where to save the plots
 2. Generates a .pdf file with MvA plots of each sample vs. sample 1
 
-```{r}
+```{r plot, echo = FALSE}
+
 MvAplot <- function(exprData, pdffilename){
   
+  N = dim(exprData) [2]
   
+  pdf(pdffilename) #specify the deftination of the pdf file 
   
+  vec <- sum(t(exprData[ , 2]))
+  
+  for (i in 3:N) { #saving plot inside pdf file 
+    
+    M = log( vec, base = 2)
+    
+          }
+  dev.off()#turn off pdf plotting
   
 }
 
@@ -40,7 +60,7 @@ MvAplot <- function(exprData, pdffilename){
   are the log ratios defined as in the MvA plot
   
 2. The function TMMnorm
-  • Scale the data by their sequencing depth and multiply by     10^6
+  • Scale the data by their sequencing depth and multiply by 10^6
   • Calculates the scaling factors SF (with respect to sample     1) by trimming the most extreme values of 
     A and taking the trimmed means of M values (suggestion:        use the R function mean)
   • Normalizes the data by their scaling factors SF with         respect to sample 1
@@ -50,7 +70,7 @@ MvAplot <- function(exprData, pdffilename){
 ####Suggestion: Generates a .pdf file with MvA plots before      and after the normalization to check your work (use the function MvAplot)
 
 ```{r}
-TMMnorm <- function(exprData,
+TMMnorm <- function(exprData = RawTranscript,
                     annot,
                     Atrim = c(0,8),
                     Mtrim = 0.02){
@@ -58,5 +78,5 @@ TMMnorm <- function(exprData,
   
   
   
-}
+  }
 ```
