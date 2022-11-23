@@ -16,13 +16,6 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 
 ```{r}
-# dataset
-path <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count.txt"
-path1 <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count_annot.txt"
-
-RawTranscript <- read.table(path, header = TRUE, sep = "")
-
-RawTranscript_annot <-  read.table(path1, header = TRUE, sep = "\t")
 ```
 
 ## Including Plots
@@ -32,25 +25,6 @@ You can also embed plots, for example:
 ```{r}
 MvAplot <- function(exprData, 
                     pdffilename){
-  
-  N = dim(exprData) [2]
-  
-  pdf(pdffilename) #specify the deftination of the pdf file
-  
-  vec <- t(exprData[ , 2])
-  
-  for (i in 3 : N) { #saving plot inside pdf file 
-    
-    M = log(vec, base = 2) - log(t(exprData[ , i]), base = 2 )
-    
-    A = (log(vec, base = 2) + log(t(exprData[ , i]), base = 2 )) / 2
-    
-    plot(A, M, type = 'p', xlab = 'log-average ', ylab = 'log-ratio')
-
-  }
-  
-  dev.off()#turn off pdf plotting
-  
 }
 ```
 
@@ -92,41 +66,6 @@ TMMnorm <- function(exprData = RawTranscript,
                     annot = RawTranscript_annot,
                     Atrim = c(0,8),
                     Mtrim = 0.02){
-  
-  #Scaling----------------------------------------
-  
-  sequencing_depth <- colSums(exprData, na.rm = TRUE ) 
-  
-  RPKM <- ( exprData * 10^6 ) / sequencing_depth
-  
-  #SF respect sample one----------------------------------
-  
-  M = log(RPKM[ , 1] , base = 2) -  
-      log(RPKM[ , 1 : 26], base = 2)
-  
-  A = (log(RPKM[ , 1] , base = 2) +
-       log(RPKM[ , 1 : 26] , base = 2) ) / 2
-  
-  #calculate the 2% percent of total row and eliminate so the lowest expressed gene
-  
-  perc <- round(nrow(M) - nrow(M) / 100 * 98)
-  
-  try <- apply(unlist(M), 2, function(x) sort(x, decreasing = TRUE))
-  
-  try <- try[1 : (nrow(try) - perc) , ]
-  
-  #replace the value outside 0 and 8 with a NaN in the average 
-  
-  A[A <= 0 | A >= 8] <- NaN
-  
-  #Scaling----------------------------------------
-  
- 
-  
-  
-  
-  
-  
 }
 
 
