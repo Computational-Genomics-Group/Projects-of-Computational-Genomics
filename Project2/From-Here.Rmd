@@ -1,6 +1,5 @@
 ---
 title: "2-project"
-author: "Piermarco Giustini"
 date: "2022-11-16"
 output: html_document
 ---
@@ -9,22 +8,27 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-
-
-```{r}
-```
-
-## Including Plots
-
-You can also embed plots, for example:
+# MvAplot
+Takes in input 
+* exprData: rows <-> genes; columns <-> samples; cells contains the number of transcripts of each gene found
+* pdffilename: filename to be used in the cration of pdf file containing all MvA plots (1 vs i for i in (2:N))
 
 ```{r}
 MvAplot <- function(exprData, 
                     pdffilename){
+  ngenes=dim(exprData)[1]
+  nsamples=dim(exprData)[2]
+  pdf(pdffilename)
+  par(mfrow=c(2,nsamples/2),
+      xlab=)
+  
+  for(i in 2:nsamples){
+    M=log2(exprData[,1]/exprData[,i])
+    A=0.5*log2(exprData[,1]*exprData[,i])
+    plot(A, M)
+  }
+  
+  dev.off()
 }
 ```
 
@@ -68,5 +72,13 @@ TMMnorm <- function(exprData = RawTranscript,
                     Mtrim = 0.02){
 }
 
+
+```
+
+# Tests
+```{r}
+exprData=read.table("raw_trascr_count.txt")
+
+MvAplot(data, "MvAPlots.pdf")
 
 ```
