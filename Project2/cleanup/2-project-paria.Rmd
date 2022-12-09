@@ -1,0 +1,136 @@
+---
+title: "2-project"
+author: "Paria Tahan"
+date: "2022-12-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+
+
+```{r}
+# dataset
+path <- "/Users/paria/Documents/GitHub/Projects-of-Computational-Genomics/Project2/raw_trascr_count.txt"
+path1 <- "/Users/paria/Documents/GitHub/Projects-of-Computational-Genomics/Project2/raw_trascr_count_annot.txt"
+
+RawTranscript <- as.matrix(read.table(path, header = TRUE, sep = ""))
+
+RawTranscript_annot <- read.table(path1, header = TRUE, sep = "\t", quote = "", fill = FALSE)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+MvAplot <- function(exprData, 
+                    pdffilenameParia){
+  
+  N = dim(exprData) [2]
+  
+  pdf(pdffilenameParia) #specify the destination of the pdf file
+  #vecTest <- exprData[ , 1]
+  
+  #vec <- t(exprData[ , 2])
+  vec <- t(exprData[ , 1])
+  
+  for (i in 2 : N) { #saving plot inside pdf file 
+    
+    M = log(vec, base = 2) - log(t(exprData[ , i]), base = 2 )
+    
+    A = (log(vec, base = 2) + log(t(exprData[ , i]), base = 2 )) / 2
+    
+    plot(A, M, type = 'p', xlab = 'log-average ', ylab = 'log-ratio')
+
+  }
+  
+  dev.off()#turn off pdf plotting
+  
+}
+test <- MvAplot(RawTranscript, "/Users/paria/Documents/GitHub/Projects-of-Computational-Genomics/Project2/pdffilename-paria.pdf")
+```
+
+##TMMnorm
+1. Takes as input 
+  • exprData: a numeric data matrix that is supposed to have     
+    the same format of the raw transcript 
+    data provided in stem (i.e. genes’IDs on rows and            
+    subjects’IDs on columns)
+  • annot: a data frame that is supposed to have the same        
+    format of the annotation data provided in 
+    stem
+  • Atrim: a vector of 2 elements indicating the lower and       
+    upper thresholds to trim the most extreme 
+    values of A (where A is the average in log2 scale) 
+  • Mtrim: a number between 0 and 1 indicating the fraction    
+    of observations to be deleted from each 
+    end (positive and negative values) of the sorted vector M    
+    before calculating the mean (where Ms
+    are the log ratios defined as in the MvA plot
+  
+2. The function TMMnorm
+  • Scale the data by their sequencing depth and multiply by 10^6
+  • Calculates the scaling factors SF (with respect to sample 1) 
+    by trimming the most extreme values of 
+    A and taking the trimmed means of M values (suggestion:
+    use the R function mean)
+  • Normalizes the data by their scaling factors SF with         
+    respect to sample 1
+  • Scale the genes (in the original scale, not in log scale)     
+    by their length and multiply by 10^3
+  • Returns a list of 2 elements: i) the vector of the           
+    scaling factors; ii) the normalized matrix        
+    (in the original scale, not in log scale)
+####Suggestion: Generates a .pdf file with MvA plots before      and after the normalization to check your work (use the function MvAplot)
+```{r}
+
+TMMnorm <- function(exprData = RawTranscript,
+                    annot = RawTranscript_annot,
+                    Atrim = c(0,8),
+                    Mtrim = 0.02){
+  
+  #Scaling----------------------------------------
+  
+  sequencing_depth <- colSums(exprData, na.rm = TRUE ) 
+  
+  RPKM <- ( exprData * 10^6 ) / sequencing_depth
+  
+  #SF respect sample one----------------------------------
+  
+  M = log(RPKM[ , 1] , base = 2) -  
+      log(RPKM[ , 1 : 26], base = 2)
+  
+  A = (log(RPKM[ , 1] , base = 2) +
+       log(RPKM[ , 1 : 26] , base = 2) ) / 2
+  
+  #calculate the 2% percent of total row and eliminate so the lowest expressed gene
+  
+  perc <- round(nrow(M) - nrow(M) / 100 * 98)
+  
+  try <- apply(unlist(M), 2, function(x) sort(x, decreasing = TRUE))
+  
+  try <- try[1 : (nrow(try) - perc) , ]
+  
+  #replace the value outside 0 and 8 with a NaN in the average 
+  
+  A[A <= 0 | A >= 8] <- NaN
+  
+  #Scaling----------------------------------------
+  
+ 
+  
+  
+  
+  
+  
+}
+
+
+```
