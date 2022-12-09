@@ -1,0 +1,218 @@
+
+---
+title: "Introduction to R: Plots basics"
+author: "Barbara Di Camillo"
+output: html_notebook
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+
+## Example 1 
+## One way anova
+
+
+```{r}
+# dataset
+datafilename="http://personality-project.org/r/datasets/R.appendix1.data"
+data.ex1=read.table(datafilename,header=T) 
+print(data.ex1)
+```
+
+
+```{r}
+# do the analysis of variance
+aov.ex1 = aov(Alertness~Dosage,data=data.ex1)  
+summary(aov.ex1) #show the summary table
+```
+
+
+```{r}
+# report the means and the number of subjects/cell
+print(model.tables(aov.ex1,"means"),digits=3) 
+```
+
+
+```{r}
+# graphical summary appears in graphics window
+boxplot(Alertness~Dosage,data=data.ex1) 
+```
+
+
+```{r}
+# Tukey Significant Differences 
+TukeyHSD(aov.ex1) 
+```
+
+
+
+
+############################################################
+
+## Example 2 
+## Two Way (Factorial) Analysis of Variance (ANOVA) 
+* The standardard 2-way ANOVA just adds another Independent Variable to the model. 
+
+############################################################
+```{r}
+set.seed(0)
+Gender<-as.factor(sample(c("f","m"),18,replace=TRUE))
+data.ex2<-cbind(data.ex1,Gender)
+print(data.ex2)
+```
+
+```{r}
+aov.ex2 = aov(Alertness~Dosage+Gender+Gender*Dosage,data=data.ex2)   #do the analysis of variance
+summary(aov.ex2)                                       #show the summary table
+```
+
+```{r}
+print(model.tables(aov.ex2,"means"))
+boxplot(Alertness~Dosage+Gender+Dosage*Gender,data=data.ex2) 
+```
+
+```{r}
+TukeyHSD(aov.ex2) # Tukey Honestly Significant Differences where aov.ex2 comes from aov()
+```
+
+# Using linear fit instead of ANOVA
+```{r}
+fit <- lm(Alertness~Dosage+Gender+Gender*Dosage,data=data.ex2)
+summary(fit)
+```
+
+
+
+
+## Let's try to analyze a RNAseq dataset with a more realistic design using edgeR 
+
+```{r}
+#load data and select columns
+DATA<-read.table("GSE147507_RawReadCounts_Human.tsv",sep="\t",row.names=1,header=TRUE)
+indSARS2<-grep("SARS.CoV.2",colnames(DATA))
+indCTRL<-grep("Mock",colnames(DATA))
+l1<-length(indSARS2)
+l2<-length(indCTRL)
+x<-DATA[,c(indSARS2,indCTRL)]
+colnames(x)
+```
+
+```{r}
+#Upload metadata
+library(edgeR)
+targets<-readTargets(file="design.txt")
+Group <- factor(targets$Treat)
+print(Group)
+```
+
+
+```{r}
+# DESIGN matrix (not always straightforward in edgeR...)
+design <- model.matrix(~0+Group) 
+rownames(design)<-colnames(x)  
+print(design)
+```
+
+```{r}
+# fit values of phi (we need this step to fit our GLM model)
+y <- DGEList(counts=x)    # y is an object of type DGE
+y <- calcNormFactors(y)   # This calculates the SF using the TMM normalization !!!
+SF<-y$samples
+```
+
+
+```{r}
+y <- estimateGLMCommonDisp(y,design, verbose=TRUE) #phi common to the entire dataset
+y <- estimateGLMTrendedDisp(y,design) #phi depends on mu
+y <- estimateGLMTagwiseDisp(y,design) #phi is gene specific
+fit <- glmFit(y,design) #finally the model fit (that accounts for raw NB data and scaling factors and seq. depth) 
+summary(fit)
+```
+
+```{r}
+Confronti<-makeContrasts(Treatment=GroupSARSCoV2-GroupMock,levels=design)
+RES<-glmLRT(fit,contrast=Confronti[,"Treatment"])
+# The first coloumn of RES reports the log_Fold_Change, i.e.: 
+# log2(Normalized_data_average_GroupSARSCoV2 / Normalized_data_average_GroupMock)
+RES$table[1:5,]
+```
+
+
+
+```{r}
+out <- topTags(RES, n = "Inf")$table
+out[1:5,]
+```
+
+
+```{r}
+indSELedgeR<-which(out$FDR<0.05)
+print(length(indSELedgeR))
+```
+
+
+## EdgeR with a more realistic design accounting also for cell type #########
+```{r}
+Group <- factor(paste(targets$Cell,targets$Treat,sep="."))
+print(Group)
+design <- model.matrix(~0+Group) 
+rownames(design)<-colnames(x)  
+```
+
+```{r}
+# fit values of phi (we need this step to fit our GLM model)
+y <- DGEList(counts=x)    # y is an object of type DGE
+y <- calcNormFactors(y)   # This calculates the SF using the TMM normalization !!!
+y <- estimateGLMCommonDisp(y,design, verbose=TRUE) #phi common to the entire dataset
+y <- estimateGLMTrendedDisp(y,design) #phi depends on mu
+y <- estimateGLMTagwiseDisp(y,design) #phi is gene specific
+fit <- glmFit(y,design) #finally the model fit. 
+summary(fit)
+```
+
+```{r}
+#we can test for the effect of viral infection accounting for variability due to different cell type
+Confronti<-makeContrasts(NHBE=GroupNHBE.SARSCoV2-GroupNHBE.Mock, A549=GroupA549.SARSCoV2-GroupA549.Mock, A549ACE2=GroupA549ACE2.SARSCoV2-GroupA549ACE2.Mock, Calu3=GroupCalu3.SARSCoV2-GroupCalu3.Mock,levels=design)
+
+RES<-glmLRT(fit,contrast=Confronti[,c("NHBE","A549","A549ACE2","Calu3")])
+out <- topTags(RES, n = "Inf")$table
+out[1:5,]
+```
+
+```{r}
+indSELedgeR<-which(out$FDR<0.05)
+length(indSELedgeR)
+namesSELedgeR<-row.names(DATA)[indSELedgeR]
+```
+
+
+```{r}
+# We can test for specific effects 
+Confronti<-makeContrasts(ACE2effect=GroupA549ACE2.SARSCoV2-GroupA549.SARSCoV2,levels=design)
+RES<-glmLRT(fit,contrast=Confronti[,c("ACE2effect")])
+out <- topTags(RES, n = "Inf")$table
+out[1:5,]
+```
+
+```{r}
+indSELedgeR<-which(out$FDR<0.05)
+length(indSELedgeR)
+```
+
+# Even more... 
+```{r}
+Confronti<-makeContrasts(ACE2effect2=((GroupA549ACE2.SARSCoV2-GroupA549ACE2.Mock)-(GroupA549.SARSCoV2-GroupA549.Mock)),levels=design)
+RES<-glmLRT(fit,contrast=Confronti[,c("ACE2effect2")])
+out <- topTags(RES, n = "Inf")$table
+out[1:5,]
+
+indSELedgeR<-which(out$FDR<0.05)
+print(length(indSELedgeR))
+```

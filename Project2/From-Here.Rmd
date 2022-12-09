@@ -1,6 +1,5 @@
 ---
 title: "2-project"
-author: "Piermarco Giustini"
 date: "2022-11-16"
 output: html_document
 ---
@@ -9,48 +8,27 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-
-
-```{r}
-# dataset
-path <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count.txt"
-path1 <- "C:/Users/Piermarco/Documents/GitHub/BigDataBuona/Projects-of-Computational-Genomics/Project2/raw_trascr_count_annot.txt"
-
-RawTranscript <- read.table(path, header = TRUE, sep = "")
-
-RawTranscript_annot <-  read.table(path1, header = TRUE, sep = "\t")
-```
-
-## Including Plots
-
-You can also embed plots, for example:
+# MvAplot
+Takes in input 
+* exprData: rows <-> genes; columns <-> samples; cells contains the number of transcripts of each gene found
+* pdffilename: filename to be used in the cration of pdf file containing all MvA plots (1 vs i for i in (2:N))
 
 ```{r}
 MvAplot <- function(exprData, 
                     pdffilename){
+  ngenes=dim(exprData)[1]
+  nsamples=dim(exprData)[2]
+  pdf(pdffilename)
+  par(mfrow=c(2,nsamples/2),
+      xlab=)
   
-  N = dim(exprData) [2]
-  
-  pdf(pdffilename) #specify the deftination of the pdf file
-  
-  vec <- t(exprData[ , 2])
-  
-  for (i in 3 : N) { #saving plot inside pdf file 
-    
-    M = log(vec, base = 2) - log(t(exprData[ , i]), base = 2 )
-    
-    A = (log(vec, base = 2) + log(t(exprData[ , i]), base = 2 )) / 2
-    
-    plot(A, M, type = 'p', xlab = 'log-average ', ylab = 'log-ratio')
-
+  for(i in 2:nsamples){
+    M=log2(exprData[,1]/exprData[,i])
+    A=0.5*log2(exprData[,1]*exprData[,i])
+    plot(A, M)
   }
   
-  dev.off()#turn off pdf plotting
-  
+  dev.off()
 }
 ```
 
@@ -92,42 +70,15 @@ TMMnorm <- function(exprData = RawTranscript,
                     annot = RawTranscript_annot,
                     Atrim = c(0,8),
                     Mtrim = 0.02){
-  
-  #Scaling----------------------------------------
-  
-  sequencing_depth <- colSums(exprData, na.rm = TRUE ) 
-  
-  RPKM <- ( exprData * 10^6 ) / sequencing_depth
-  
-  #SF respect sample one----------------------------------
-  
-  M = log(RPKM[ , 1] , base = 2) -  
-      log(RPKM[ , 1 : 26], base = 2)
-  
-  A = (log(RPKM[ , 1] , base = 2) +
-       log(RPKM[ , 1 : 26] , base = 2) ) / 2
-  
-  #calculate the 2% percent of total row and eliminate so the lowest expressed gene
-  
-  perc <- round(nrow(M) - nrow(M) / 100 * 98)
-  
-  try <- apply(unlist(M), 2, function(x) sort(x, decreasing = TRUE))
-  
-  try <- try[1 : (nrow(try) - perc) , ]
-  
-  #replace the value outside 0 and 8 with a NaN in the average 
-  
-  A[A <= 0 | A >= 8] <- NaN
-  
-  #Scaling----------------------------------------
-  
- 
-  
-  
-  
-  
-  
 }
 
+
+```
+
+# Tests
+```{r}
+exprData=read.table("raw_trascr_count.txt")
+
+MvAplot(data, "MvAPlots.pdf")
 
 ```
