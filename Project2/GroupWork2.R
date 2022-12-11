@@ -86,24 +86,35 @@ TMMnorm <- function(exprData = RawTranscript,
 
 #################################################################################
 DEbyEdgeR <- function(rawdat, groups, alpha = 0.05) {
-  indGroup <- c(
-    grep("Group1", colnames(DATA)),
-    grep("Group2", colnames(DATA))
-  )
-  lg <- length(indGroup)
+  #l.indices=list()
+  lab1.indices=grep(groups[1],colnames(rawdat))
+  lab2.indices=grep(groups[2],colnames(rawdat))
   
-  indCTRL <- grep("CTRL", colnames(DATA))
-  lc <- length(indCTRL)
   
-  target = matrix( rep("Patients", dim(DATA)[2]) )
-  target[indCTRL, ] = "CTRL"
-  rownames(target)=colnames(DATA)
+ # for(i in 1:length(groups)){
+ #   l.indices=append(l.indices, list(grep(groups[i], colnames(rawdat))))
+ # }
+  #indGroup <- c(
+  #  grep("Group1", colnames(rawdat)),
+  #  grep("Group2", colnames(rawdat))
+  #)
+  #lg <- length(indGroup)
+  #indCTRL <- grep("CTRL", colnames(rawdat))
+  #lc <- length(indCTRL)
+  
+  target = matrix( rep("a", dim(rawdat)[2]) )
+  target[lab1.indices,]=groups[1]
+  target[lab2.indices,]=groups[2]
+  #for(i in 1:length(groups)){
+  #  target[l.indices[i],1]=groups[1]
+  #}
   colnames(target) = c("Groups")
+  rownames(target)=colnames(rawdat)
   
-  Group = factor(target)
+  Group = factor(target$Group)
   design = model.matrix( ~ 0 + Group)
   
-  y <- DGEList(counts = DATA)
+  y <- DGEList(counts = rawdat)
   y <- calcNormFactors(y)
   SF <- y$samples
   
@@ -114,12 +125,12 @@ DEbyEdgeR <- function(rawdat, groups, alpha = 0.05) {
   #summary(fit)
   
   
-  Confronti <- makeContrasts(Treatment = "GroupCTRL-GroupPatients", levels = design)
-  RES <- glmLRT(fit, contrast = Confronti[, "Treatment"])
+  Confronti <- makeContrasts(Treatment = sprintf("Group%s-Group%s",groups[2],groups[1]), levels = design)
+  RES <- glmLRT(fit, contrast = Confronti)
   # The first coloumn of RES reports the log_Fold_Change, i.e.:
   # log2(Normalized_data_average_GroupSARSCoV2 / Normalized_data_average_GroupMock)
   
-  G=dim(DATA)[1]
+  G=dim(rawdat)[1]
   G0=0.8*G
   
   alpha = 0.05
