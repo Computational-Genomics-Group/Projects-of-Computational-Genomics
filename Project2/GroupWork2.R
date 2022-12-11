@@ -26,8 +26,8 @@ MvAplot <- function(exprData,
 }
 
 # TMMnorm ######################################################################
-TMMnorm <- function(exprData = RawTranscript,
-                    annot = RawTranscript_annot,
+TMMnorm <- function(exprData,
+                    annot,
                     Atrim = c(0, 8),
                     Mtrim = 0.02) {
   # Scale data by their sequencing depth and multiply by 10^6 ##################
@@ -42,8 +42,6 @@ TMMnorm <- function(exprData = RawTranscript,
           , MARGIN = 2
           , (function(x) return(sum(x * genes.length)))
     )
-  
-  MvAplot(exprData.scaled, "output/mvabeforenorm.pdf")
   
   # Calculate SF ScaleFactor ###################################################
   # as average of M
@@ -70,14 +68,11 @@ TMMnorm <- function(exprData = RawTranscript,
     }
   }
   
-  MvAplot(exprData.norm, "output/mvaafternorm.pdf")
-  
-  
   # scale the genes (in original scale) by their length and multiply by 10^3
   exprData.scaled = exprData / genes.length * (10 ^ 3)
   
   return(list(
-    SF.vector
+    SF.vector # SF.vector does not contain the scale factor for sample1, if desired insert 0 (log scale)
     , exprData.scaled
   ))
 }
@@ -86,28 +81,13 @@ TMMnorm <- function(exprData = RawTranscript,
 
 #################################################################################
 DEbyEdgeR <- function(rawdat, groups, alpha = 0.05) {
-  #l.indices=list()
+  # assuming length(groups)=2 as data format in STEM
   lab1.indices=grep(groups[1],colnames(rawdat))
   lab2.indices=grep(groups[2],colnames(rawdat))
-  
-  
- # for(i in 1:length(groups)){
- #   l.indices=append(l.indices, list(grep(groups[i], colnames(rawdat))))
- # }
-  #indGroup <- c(
-  #  grep("Group1", colnames(rawdat)),
-  #  grep("Group2", colnames(rawdat))
-  #)
-  #lg <- length(indGroup)
-  #indCTRL <- grep("CTRL", colnames(rawdat))
-  #lc <- length(indCTRL)
   
   target = matrix( rep("a", dim(rawdat)[2]) )
   target[lab1.indices,]=groups[1]
   target[lab2.indices,]=groups[2]
-  #for(i in 1:length(groups)){
-  #  target[l.indices[i],1]=groups[1]
-  #}
   colnames(target) = c("Groups")
   rownames(target)=colnames(rawdat)
   
@@ -124,16 +104,11 @@ DEbyEdgeR <- function(rawdat, groups, alpha = 0.05) {
   fit <- glmFit(y, design) 
   #summary(fit)
   
-  
   Confronti <- makeContrasts(Treatment = sprintf("Group%s-Group%s",groups[2],groups[1]), levels = design)
   RES <- glmLRT(fit, contrast = Confronti)
-  # The first coloumn of RES reports the log_Fold_Change, i.e.:
-  # log2(Normalized_data_average_GroupSARSCoV2 / Normalized_data_average_GroupMock)
   
   G=dim(rawdat)[1]
   G0=0.8*G
-  
-  alpha = 0.05
   selected = sum(RES$table$PValue < alpha)
   
   EFP=min(selected, G0*alpha)
