@@ -62,7 +62,7 @@ TMMnorm <- function(exprData,
       rm(M.Atrimmed,M,A)
       
       ## trying to normalize data
-      exprData.norm[i] = exprData.scaled[, i] + 2 ^ SF
+      exprData.norm[i] = exprData.scaled[, i] * 2 ^ SF
     }else{
       exprData.norm[1]=exprData.scaled[1]
     }
