@@ -1,0 +1,32 @@
+---
+title: "GroupWork3"
+output: html_document
+date: "2022-12-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data
+
+The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of 16S sequencing of fecal samples from healty donors and patients affected by clostridium difficile, summarized at genus level
+
+```{r}
+filename="Genus_otu_table.txt"
+DATA=read.table(filename,header = TRUE, sep = "\t")
+```
+
+# Part a
+
+Chose which type(s) of \* data transformation (`clr`, `alr`) \* normalization (`GMPR`, `CSS`, `TMM`) \* imputation (`mbImoute`) you want to perform on data
+
+# Part b
+
+Run DA analysis using `Aldex` and `Ancom` and compare results
+
+# Part c
+
+Based on the results obtained in [Part b](Part%20b), **select a set of DA taxa** and, based only on those taxa, **run `NMDS`, `t-sne` and `UMAP`** to project healthy donors and the patients on 2 dimension.
+
+> Are These plots equal to the ones tou obtian using all taxa instead of using only the DA?
