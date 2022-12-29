@@ -10,23 +10,48 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Data
 
-The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of 16S sequencing of fecal samples from healty donors and patients affected by clostridium difficile, summarized at genus level
+The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of 16S sequencing of fecal samples from healthy donors and patients affected by clostridium difficile, summarized at genus level
 
 ```{r}
 filename="Genus_otu_table.txt"
 DATA=read.table(filename,header = TRUE, sep = "\t")
+DATA=matrix(c(2,0,3,2,5,3),byrow = TRUE,ncol=2)
 ```
 
 # Part a
 
-Chose which type(s) of \* data transformation (`clr`, `alr`) \* normalization (`GMPR`, `CSS`, `TMM`) \* imputation (`mbImoute`) you want to perform on data
+Chose which type(s) of **data transformation** (`clr`, `alr`) **normalization** (`GMPR`, `CSS`, `TMM`) **imputation** (`mbImoute`) you want to perform on data
+
+## Normalization
+$clr(x)=\left(\ln x_i-\frac 1 D \sum_{j=1}^D\ln x_j\right)_i=\ln\left(\frac{x_i}{\Pi_{j=1}^Dx_j}\right)$
+```{r}
+clr.mine <- function (DATA){
+  data= apply(
+    DATA
+    , MARGIN = 2
+    , FUN = ( function (x) ( x/(prod(x[x!=0])^(1/length(x[x!=0]))) ) )
+  )
+  notzero=data>0 & !is.na(data) 
+  data=ifelse(notzero,log2(data),data)
+  return(data)
+}
+o=clr.mine(DATA)
+```
+
+```{r}
+if(!require(compositions)) install.packages(compositions)
+library(compositions)
+o2=clr(DATA)
+```
+
+
 
 # Part b
 
-Run DA analysis using `Aldex` and `Ancom` and compare results
+Run **DA analysis** using `Aldex` and `Ancom` and **compare results**
 
 # Part c
 
 Based on the results obtained in [Part b](Part%20b), **select a set of DA taxa** and, based only on those taxa, **run `NMDS`, `t-sne` and `UMAP`** to project healthy donors and the patients on 2 dimension.
 
-> Are These plots equal to the ones tou obtian using all taxa instead of using only the DA?
+> Are These plots equal to the ones obtained using all taxa instead of using only the DA?
