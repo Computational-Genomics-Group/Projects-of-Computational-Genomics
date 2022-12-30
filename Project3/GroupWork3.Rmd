@@ -15,36 +15,67 @@ The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of
 ```{r}
 filename="Genus_otu_table.txt"
 DATA=read.table(filename,header = TRUE, sep = "\t")
-DATA=matrix(c(2,0,3,2,5,3),byrow = TRUE,ncol=2)
 ```
 
-# Part a
-
-Chose which type(s) of **data transformation** (`clr`, `alr`) **normalization** (`GMPR`, `CSS`, `TMM`) **imputation** (`mbImoute`) you want to perform on data
-
-## Normalization
-$clr(x)=\left(\ln x_i-\frac 1 D \sum_{j=1}^D\ln x_j\right)_i=\ln\left(\frac{x_i}{\Pi_{j=1}^Dx_j}\right)$
-```{r}
-clr.mine <- function (DATA){
-  data= apply(
-    DATA
-    , MARGIN = 2
-    , FUN = ( function (x) ( x/(prod(x[x!=0])^(1/length(x[x!=0]))) ) )
-  )
-  notzero=data>0 & !is.na(data) 
-  data=ifelse(notzero,log2(data),data)
-  return(data)
-}
-o=clr.mine(DATA)
-```
+#Packages
 
 ```{r}
 if(!require(compositions)) install.packages(compositions)
 library(compositions)
 o2=clr(DATA)
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("metagenomeSeq")
+library(metagenomeSeq)
 ```
 
+#PART A
 
+Chose which type(s) of **data transformation** (`clr`, `alr`) **normalization** (`GMPR`, `CSS`, `TMM`) **imputation** (`mbImoute`) you want to perform on data
+
+## Data Transofrmation
+$clr(x)=\left(\ln x_i-\frac 1 D \sum_{j=1}^D\ln x_j\right)_i=\ln\left(\frac{x_i}{\Pi_{j=1}^Dx_j}\right)$
+
+```{r}
+clr <- function (DATA){
+  data= apply(
+              DATA
+              , MARGIN = 2 #by column 
+              , FUN = ( function (x) (x / (prod(x[x != 0]) ^ (1 / length(x[x != 0] ))))))
+  notzero = data > 0 & !is.na(data) 
+  data = ifelse(notzero,log2(data), data)
+  return(data)
+}
+data_transformed_crl = clr(DATA)
+```
+
+```{r}
+alr <- function (DATA){
+  not_zero = DATA > 0 & !is.na(DATA)
+  DATA1 = ifelse(not_zero, 0, 1)
+  num_zeros = rowSums(DATA1)
+  lower_row = sort(unlist(num_zeros))
+  index = which(num_zeros == lower_row[1])
+  DATA[DATA == 0] = 1 #replace 0's with 1's
+  row = t(DATA[index,])#transpose it to do row / colum calc in apply
+  
+  #problem we haven't a taxa present in all the sample we have to replace 0's with 1's. Also, I am going to     use as reference the one with lower number of 0's 
+  data = t(apply(DATA, 
+               1, 
+               (FUN = function(x) (log2(x / row)))
+               ))
+  return(data)
+}
+
+data_transformed_arl = alr(DATA)
+```
+
+##Normalization
+```{r}
+metaSeqObject = newMRexperiment(data_transformed_crl) 
+metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
+OTU_read_count_CSS = data.frame(MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
+```
 
 # Part b
 
