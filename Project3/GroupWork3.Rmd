@@ -15,6 +15,7 @@ The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of
 ```{r}
 filename="Genus_otu_table.txt"
 DATA=read.table(filename,header = TRUE, sep = "\t")
+#DATA = DATA[1:4, 1:3]
 ```
 
 #Packages
@@ -24,7 +25,7 @@ if(!require(compositions)) install.packages(compositions)
 library(compositions)
 o2=clr(DATA)
 if (!requireNamespace("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
+  install.packages("BiocManager")
 BiocManager::install("metagenomeSeq")
 library(metagenomeSeq)
 ```
@@ -39,14 +40,15 @@ $clr(x)=\left(\ln x_i-\frac 1 D \sum_{j=1}^D\ln x_j\right)_i=\ln\left(\frac{x_i}
 ```{r}
 clr <- function (DATA){
   data= apply(
-              DATA
-              , MARGIN = 2 #by column 
-              , FUN = ( function (x) (x / (prod(x[x != 0]) ^ (1 / length(x[x != 0] ))))))
+    DATA
+    , MARGIN = 2 #by column 
+    , FUN = ( function (x) (x / (prod(x[x != 0]) ^ (1 / length(x[x != 0] ))))))
   notzero = data > 0 & !is.na(data) 
   data = ifelse(notzero,log2(data), data)
   return(data)
 }
 data_transformed_crl = clr(DATA)
+type(data_transformed_crl)
 ```
 
 ```{r}
@@ -55,26 +57,60 @@ alr <- function (DATA){
   DATA1 = ifelse(not_zero, 0, 1)
   num_zeros = rowSums(DATA1)
   lower_row = sort(unlist(num_zeros))
-  index = which(num_zeros == lower_row[1])
+  index = which(num_zeros == lower_row[1]) [1]
   DATA[DATA == 0] = 1 #replace 0's with 1's
-  row = t(DATA[index,])#transpose it to do row / colum calc in apply
+  row = t(DATA[index,]) #transpose it to do row / colum calc in apply
   
   #problem we haven't a taxa present in all the sample we have to replace 0's with 1's. Also, I am going to     use as reference the one with lower number of 0's 
-  data = t(apply(DATA, 
-               1, 
-               (FUN = function(x) (log2(x / row)))
-               ))
-  return(data)
+  for (i in 1:nrow(DATA)){
+    DATA[i,] = log2(DATA[i,] / row)
+  }
+  
+  return(DATA)
 }
 
 data_transformed_arl = alr(DATA)
+data_transformed_arl = as.matrix(data_transformed_arl)
 ```
 
 ##Normalization
 ```{r}
-metaSeqObject = newMRexperiment(data_transformed_crl) 
+metaSeqObject = newMRexperiment(data_transformed_crl) #samples on the column and row has to be the feature
 metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
-OTU_read_count_CSS = data.frame(MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
+OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = FALSE, log = TRUE))
+```
+```{r}
+GMPR <- function (DATA){
+  
+  r_j_k <- vector()
+  for (j in 1:ncol(DATA)){
+    for (k in 1:ncol(DATA)){
+      if(j != k){
+        r_j_k <- append(r_j_k , median(DATA[,j] / DATA[,k], na.rm = TRUE))
+      }
+    }
+  }
+  
+  s_j <- vector()
+  value = 0
+  
+  for(i in length(r_j_k)){
+    print(i)
+    if (value == 0){
+      value =  r_j_k[i]
+    }else{
+      value = value * r_j_k[i]  
+    }
+    
+    if((i %% (dim(DATA)[2] - 1)) == 0){
+      s_j <- append(s_j, value)
+      value = 0
+    }
+  }
+  return(s_j)
+}
+
+s_j = GMPR(DATA)
 ```
 
 # Part b
