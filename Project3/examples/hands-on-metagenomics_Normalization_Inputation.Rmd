@@ -1,0 +1,172 @@
+---
+title: "Preprocessing microbiome data"
+author: "Barbara Di Camillo, Marco Cappellato"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    number_sections: true
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=8, fig.height=6, fig.align = 'center', fig.path = "fig/")
+```
+
+
+## Load the data
+
+```{r message = FALSE}
+#read the raw otu table saved at genus level
+feature_table_gen<-as.matrix(read.table("Genus_otu_table.txt",sep="\t"))
+```
+
+## CLR transformation with pseudocounts
+```{r message = FALSE}
+# Clr transformation with pseudocounts
+feature_table_gen_pseudo<-feature_table_gen+1
+np<-dim(feature_table_gen_pseudo)[2] #number of samples
+nt<-dim(feature_table_gen_pseudo)[1] #number of taxa
+clrtransform_pseudo<-feature_table_gen_pseudo #just to initialize clrtransform_pseudo
+for (i in (1:np)) {
+  den<-(prod(feature_table_gen_pseudo[,i]))^(1/nt) #geometric mean of column i
+  clrtransform_pseudo[,i]<-log2(feature_table_gen_pseudo[,i]/den) #clr transformation of column i
+}
+head(clrtransform_pseudo)[1:5,1:10]
+```
+
+## CLR transformation without pseudocounts
+```{r message = FALSE}
+# Clr transformation without pseudocounts
+np<-dim(feature_table_gen)[2] #number of samples
+nt<-dim(feature_table_gen)[1] #number of taxa
+clrtransform<-feature_table_gen #just to initialize clrtransform
+for (i in (1:np)) {
+  x<-feature_table_gen[,i]
+  x[which(x==0)]<-NA
+  den<-(prod(x,na.rm=TRUE)^(1/length(which(!is.na(x))))) #geometric mean of column i (excluding 0)
+  clrtransform[,i]<-log2(x/den) #clr transformation of column i
+  clrtransform[which(is.na(x)),i]<-0
+}
+head(feature_table_gen)[1:5,1:10]
+head(clrtransform)[1:5,1:10]
+```
+
+
+
+##  GMPR normalization
+
+```{r warning = FALSE}
+library(GMPR)
+# GMPR expect samples on rows... we need to transpose the count matrix
+GMPR_factors<- GMPR(OTUmatrix = t(feature_table_gen), min_ct = 2, intersect_no = 4) #see help for parameters meaning
+feature_table_gen_gmpr<- t(t(feature_table_gen)/GMPR_factors)
+
+GMPR_factors[1:10]
+head(feature_table_gen)[1:5,1:10]
+head(feature_table_gen_gmpr)[1:5,1:10]
+```
+
+
+
+## mbImpute (it takes around 8 minutes to run)
+
+```{r include = FALSE} 
+#it takes around 8 minutes to run
+library(mbImpute)
+label_samples<-read.table("metadata_table.txt",sep="\t",header=T)
+# mbImpute expect samples on rows... we need to transpose the count matrix
+imp_count_mats <- mbImpute(condition = label_samples$DiseaseState, otu_tab = t(feature_table_gen), unnormalized = T)
+#mbImpute returns a list three imputed OTU matrices. 
+#imp_count_mat_lognorm: imputed normalized and log transformed matrix. 
+#imp_count_mat_norm : imputed normalized count matrix with
+#library size of each sample equal to 10^6. 
+#imp_count_mat_origlibsize: imputed countmatrix at the original library size.
+
+imp_count_mat <-t(imp_count_mats[[3]])
+```
+
+
+```{r include = FALSE}
+#load("imp_count_mat_ls.RData")
+```
+
+## print original sparsity and  % of imputed data
+```{r include = FALSE}
+
+tot_zeros<- sum(feature_table_gen==0)
+tot_zeros_imp<- sum(imp_count_mat==0) 
+
+paste("Sparsity =", round(tot_zeros/length(feature_table_gen)*100, digits = 1))
+paste("Perc imputed =",round((tot_zeros-tot_zeros_imp)/length(feature_table_gen)*100, digits = 1))
+```
+
+
+## PCA --- objects on rows so to project them on a lower dim space 
+```{r include = FALSE}
+
+PCA<-function(dati,condition){
+  dati<-t(dati) # 
+  N<-dim(dati)[1] #objects
+  M<-dim(dati)[2] #genes (variables)
+  S<-cov(dati)
+  Eig<-eigen(S)
+  lambda<-Eig[[1]] #eigenvalues
+  PCs<-Eig[[2]] #eigenvectors (matrix V)
+  varperc<-rep(0,M)
+  for (i in (1:M)) varperc[i]<-sum(lambda[1:i])/sum(lambda)
+  plot(varperc,type="b")
+  Y<-dati%*%PCs # projection of the N objects in the new coordinates along the M PCs
+  nmc<-names(table(condition))
+  L<-length(nmc)
+  plot(Y[,1],Y[,2]) # in this plot I am showing data in D=2 dim
+  for (i in (2:L)) points(Y[which(condition==nmc[i]),1],Y[which(condition==nmc[i]),2],col=(i+1))
+  #data can be reconstructed
+  #rec_dati<-Y%*%t(PCs)
+  return(list(Y,PCs,lambda))
+}
+```
+
+
+```{r}
+resPCA<-PCA(feature_table_gen,condition=label_samples$DiseaseState)
+```
+```{r}
+resPCA<-PCA(feature_table_gen_gmpr,condition=label_samples$DiseaseState)
+```
+
+
+```{r}
+resPCA<-PCA(clrtransform,condition=label_samples$DiseaseState)
+```
+
+
+```{r}
+resPCA<-PCA(imp_count_mat,condition=label_samples$DiseaseState)
+```
+
+
+## Imputing the data and clr transform to work on Euclidean space
+```{r message = FALSE}
+# Clr transformation without pseudocounts on imputed data
+np<-dim(imp_count_mat)[2] #number of samples
+nt<-dim(imp_count_mat)[1] #number of taxa
+impclr_count_mat<-imp_count_mat #just to initialize clrtransform
+for (i in (1:np)) {
+  x<-imp_count_mat[,i]
+  x[which(x==0)]<-NA
+  den<-(prod(x,na.rm=TRUE)^(1/length(which(!is.na(x))))) #geometric mean of column i (excluding 0)
+  impclr_count_mat[,i]<-log2(x/den) #clr transformation of column i
+  impclr_count_mat[which(is.na(x)),i]<-0
+}
+head(imp_count_mat)[1:5,1:10]
+head(impclr_count_mat)[1:5,1:10]
+resPCA<-PCA(impclr_count_mat,condition=label_samples$DiseaseState)
+```
+## Save workspace for the next hands-on
+```{r message = FALSE}
+save.image("D:/laptopCGSlide2223/CGSlide2223/preprocessing.RData")
+```

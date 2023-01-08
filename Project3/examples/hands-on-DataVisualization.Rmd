@@ -1,0 +1,118 @@
+---
+  title: "Data Visualization"
+author: "Barbara Di Camillo"
+output: 
+  html_document:
+  theme: readable
+toc: yes
+toc_depth: 3
+number_sections: true
+pdf_document:
+  toc: yes
+toc_depth: '3'
+---
+  
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=8, fig.height=6, fig.align = 'center', fig.path = "fig/")
+```
+
+
+```{r}
+# Clean Global Environment
+rm(list=ls())
+
+# load preprocessed data (from the last hands on))
+load("preprocessing.RData")
+```
+
+
+# tsne
+```{r}
+#BiocManager::install("M3C")
+library(M3C)
+
+label_samples<-read.table("metadata_table.txt",sep="\t",header=T)
+tsne(feature_table_gen,labels=label_samples$DiseaseState,perplex=10)
+# mydata:  Data frame or matrix: if dataframe/matrix should have samples as columns and rows as features
+# labels:  Character vector: if we want to just label with gender for example
+# perplex: Numerical value: perplexity value that Rtsne uses internally
+# ...
+```
+
+```{r}
+tsne(clrtransform,labels=label_samples$DiseaseState,perplex=10)
+```
+
+```{r}
+tsne(imp_count_mat,labels=label_samples$DiseaseState,perplex=10)
+```
+
+```{r}
+tsne(impclr_count_mat,labels=label_samples$DiseaseState,perplex=10)
+```
+
+
+## Umap
+
+```{r}
+#BiocManager::install("umap")
+library(umap)
+umap.defaults
+```
+
+```{r}
+#REMEMBER to TRANSPOSE THE MATRIX (IF NEEDED)samples to be projected must be on rows
+res.umap <- umap(t(feature_table_gen))
+head(res.umap$layout, 3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(label_samples$DiseaseState=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+```
+
+```{r}
+res.umap <- umap(t(clrtransform))
+head(res.umap$layout, 3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(label_samples$DiseaseState=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+```
+
+```{r}
+res.umap <- umap(t(impclr_count_mat),n_neighbours=5, n_components=3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+plot(res.umap$layout[,1],res.umap$layout[,3])
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,3],col=2)
+
+plot(res.umap$layout[,2],res.umap$layout[,3])
+points(res.umap$layout[indCDI,2],res.umap$layout[indCDI,3],col=2)
+```
+
+
+## NMDS
+```{r}
+#BiocManager::install("vegan")
+library(vegan)
+
+res.nmds = metaMDS(t(imp_count_mat),distance="bray")
+
+#extract x and y coordinates and plot
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(label_samples$DiseaseState=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+```
+
+```{r}
+#BiocManager::install("vegan")
+library(vegan)
+
+res.nmds = metaMDS(t(impclr_count_mat),distance="euclidean")
+
+#extract x and y coordinates and plot
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(label_samples$DiseaseState=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+```
