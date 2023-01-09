@@ -7,21 +7,6 @@ date: "2022-12-21"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
-# Data
-
-The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of 16S sequencing of fecal samples from healthy donors and patients affected by clostridium difficile, summarized at genus level
-
-```{r}
-DATA.FILENAME="Genus_otu_table.txt"
-DATA=as.matrix(read.table(DATA.FILENAME,header = TRUE, sep = "\t"))
-#DATA = DATA[1:4, 1:3]
-METADATA.filename="metadata_table.txt"
-METADATA=read.table(METADATA.filename, header = TRUE, sep ="\t")
-
-paste("Sparsity =", round(sum(DATA==0)/length(DATA)*100, digits = 1))
-```
-
 # Packages
 
 ```{r}
@@ -29,21 +14,38 @@ if (!requireNamespace("devtools", quietly = TRUE))  install.packages("devtools")
 library(devtools)
 
 if (!requireNamespace("BiocManager", quietly = TRUE))  install.packages("BiocManager")
-BiocManager::install("metagenomeSeq")
-if (!requireNamespace("GUniFrac", quietly = TRUE))  install.packages("GUniFrac")
-if (!requireNamespace("glmnet", quietly = TRUE))  install.packages("glmnet")
-if (!requireNamespace("Matrix", quietly = TRUE))  install.packages("Matrix")
-if (!requireNamespace("mbImpute", quietly = TRUE))  install_github("ruochenj/mbImpute/mbImpute R package")
-
-library(GUniFrac)
+if (!requireNamespace("metagenomeSeq", quitely = TRUE )) BiocManager::install("metagenomeSeq")
 library(metagenomeSeq)
+if (!requireNamespace("GUniFrac", quietly = TRUE))  install.packages("GUniFrac")
+library(GUniFrac)
+if (!requireNamespace("glmnet", quietly = TRUE))  install.packages("glmnet")
 library(glmnet)
+if (!requireNamespace("Matrix", quietly = TRUE))  install.packages("Matrix")
 library(Matrix)
+if (!requireNamespace("mbImpute", quietly = TRUE))  install_github("ruochenj/mbImpute/mbImpute R package")
 library(mbImpute)
-library(devtools)
-library(Matrix)
-
+if(!require(compositions)) install.packages(compositions)
+library(compositions)
+library(parallel)
 ```
+
+# Data
+
+The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of 16S sequencing of fecal samples from healthy donors and patients affected by clostridium difficile, summarized at genus level
+
+```{r}
+DATA.FILENAME="Genus_otu_table.txt"
+DATA=as.matrix(read.table(DATA.FILENAME, sep = "\t"))
+paste("Sparsity =", round(sum(DATA==0)/length(DATA)*100, digits = 1))
+
+METADATA.filename="metadata_table.txt"
+METADATA=read.table(METADATA.filename, header = TRUE, sep ="\t")
+rownames(METADATA)=METADATA$ID
+METADATA.annotdf=as(METADATA,"AnnotatedDataFrame")
+```
+
+
+---
 
 # PART A
 
@@ -51,13 +53,7 @@ Chose which type(s) of **data transformation** (`clr`, `alr`) **normalization** 
 
 ## Data Transofrmation
 
-```{r}
-if(!require(compositions)) install.packages(compositions)
-library(compositions)
-```
-
 $${\displaystyle clr(x)=\left(\log x_i-\frac 1 {nt} \sum_{j=1}^{nt}\log x_j\right)_i=\log\left(\frac{x_i}{\left(\Pi_{j=1}^{nt}x_j\right)^\frac1{nt}}\right)_i}$$
-
 
 ```{r}
 my.clr <- function (data){
@@ -68,25 +64,26 @@ my.clr <- function (data){
   data[!is.ok]=NA
   
   for (i in (1:np)) {
-    out[,i]<- ifelse(is.ok[,i]
-                     , log(data[,i]) - sum(log(data[,i]), na.rm = TRUE) / sum(is.ok[,i]) #clr transformation of column i
-                     , 0)
+    out[,i]<- ifelse(is.ok[,i]  # clr transformation of column i or 0
+     , log(data[,i]) - sum(log(data[,i]), na.rm = TRUE) / sum(is.ok[,i]) 
+     , 0)
   } 
   out
 }
 
-data.psc_myclr=my.clr(DATA+1) # psc -> pseudocounts
-data_myclr=my.clr(DATA)
-
-data.psc_clr=as.matrix(clr(DATA+1))
-data_clr=as.matrix(t(clr(t(DATA))))
 
 ```
 
 ```{r}
 head(DATA[,1:5])
+
+data.psc_myclr=my.clr(DATA+1) # psc -> pseudocounts
+data.psc_clr=as.matrix(t(clr(t(DATA+1))))
 head(data.psc_myclr[,1:5])
 head(data.psc_clr[,1:5])
+
+data_myclr=my.clr(DATA)
+data_clr=as.matrix(t(clr(t(DATA))))
 head(data_myclr[,1:5])
 head(data_clr[,1:5])
 
@@ -101,28 +98,26 @@ $${\displaystyle \operatorname {alr} (x)=\left(\log {\frac {x_{1}}{x_{D}}}\right
 my.alr <- function (data){
   # select reference | 
   is.ok = data>0 & is.finite(data)
-  data = ifelse(nvm, data, NA)
+  data = ifelse(is.ok, data, NA)
 
-  num.zero = apply(data==0,MARGIN=1,FUN=sum) #Count number of zeroes by row
+  num.zero = apply(is.na(data),MARGIN=1,FUN=sum) #Count number of zeroes by row
   r = which.min(num.zero)                    #Index corresponding to row with lowest number of zeroes
   #cat(sprintf("Reference taxa is the %d (%s) with %d zero \n\n",r, rownames(DATA)[r],  num.zero[r])) 
   
   out=data
   #problem we haven't a taxa present in all the sample we have to replace 0's with 1's. Also, I am going to     use as reference the one with lower number of 0's 
   for (i in 1:ncol(data)){
-    out[,i]=ifelse(is.na(data[r,i])
-                   , log2(data[,i] / 1)
-                   , log2(data[,i] / DATA[r,i]) 
-                   )
+    out[,i]=log(data[,i] / data[r,i]) 
   }
+  out[is.na(out)]=-Inf # TODO replace "replace NA" with "replace 0" where !is.ok
   return(out)
 }
 
 data_myalr = my.alr(DATA)
 
-num.zero = apply(DATA==0,MARGIN=1,FUN=sum)
+num.zero = apply(!(DATA>0 & is.finite(DATA)),MARGIN=1,FUN=sum)
 r = which.min(num.zero)
-data_alr = alr(DATA, ivar = r)
+data_alr = t(alr(t(DATA), ivar = r))
 
 ```
 
@@ -133,14 +128,21 @@ head(data_alr[,1:5])
 ```
 
 ## Normalization
-
+### CSS - Cumulative Sum Scaling 
 ```{r}
-metaSeqObject = newMRexperiment(data, featureData = annotatedDataFrameFrom(METADATA)) #samples on the column and row has to be the feature
+data=DATA
+metaSeqObject = newMRexperiment(data,phenoData = METADATA.annotdf) #samples on the column and row has to be the feature
 metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
-OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = FALSE, log = TRUE))
+OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
+# returns normalized and log transformed data.
+```
+```{r}
+head(DATA[,1:5])
+head(metaSeqObject_CSS[,1:5])
 ```
 
-## GMPR
+
+### GMPR
 ```{r}
 if(!requireNamespace("GMPR",quitely = TRUE)) install_github("lichen-lab/GMPR")
 library(GMPR)
@@ -148,7 +150,7 @@ library(GMPR)
 
 ```{r}
 # GMPR expect samples on rows... we need to transpose the count matrix
-GMPR_factors<- GMPR(OTUmatrix = t(DATA), min_ct = 2, intersect_no = 4) #see help for parameters meaning
+GMPR_factors<- GMPR(OTUmatrix = as.data.frame(DATA), min_ct = 2, intersect_no = 4) #see help for parameters meaning
 data_gmpr<- t(t(DATA)/GMPR_factors)
 ```
 
@@ -158,155 +160,79 @@ head(DATA[,1:5])
 head(data_gmpr[,1:5])
 ```
 
-## My GMPR
+### My GMPR
 
 ```{r}
-
-my.gmprsizefactor <- function(x,data){
-  pr=x/data
-  pr[is.nan(pr)|pr==0|is.infinite(pr)]<-NA
-  medians=apply(pr, 2, median, na.rm=TRUE)
-  incl.no <- colSums(!is.na(pr))		
-  out=exp(mean(log(medians[incl.no>=4])))
-  out
-}
-
-
-my.sizefactors_gmpr=as.vector(
-  apply(DATA, MARGIN=2,FUN=my.gmprsizefactor, data=DATA)
-)
-
+#my.gmprsizefactor <- function(x,data){
+#  pr=x/data
+#  pr[is.nan(pr)|pr==0|is.infinite(pr)]<-NA
+#  medians=apply(pr, 2, median, na.rm=TRUE)
+#  incl.no <- colSums(!is.na(pr))		
+#  out=exp(mean(log(medians[incl.no>=4])))
+#  out
+#}
+#
+#
+#my.sizefactors_gmpr=as.vector(
+#  apply(DATA, MARGIN=2,FUN=my.gmprsizefactor, data=DATA)
+#)
 ```
 
-# Zero Imputation
+## Zero Imputation
 
-## mbImpute
+### mbImpute
 
 ```{r}
-label_samples<-read.table("metadata_table.txt",sep="\t",header=T)
 # mbImpute expect samples on rows... we need to transpose the count matrix
-imp_count_mats <- mbImpute(condition = label_samples$DiseaseState, otu_tab = t(DATA), unnormalized = T)
+st=Sys.time()
+imp_count_mats = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(DATA), unnormalized = T, parallel = TRUE, ncores=detectCores() )
+cat("Execution time ", numeric(Sys.time()-st), "Seconds")
 #mbImpute returns a list three imputed OTU matrices. 
 #imp_count_mat_lognorm: imputed normalized and log transformed matrix. 
 #imp_count_mat_norm : imputed normalized count matrix with
 #library size of each sample equal to 10^6. 
 #imp_count_mat_origlibsize: imputed countmatrix at the original library size.
+head(imp_count_mats)
 
-imp_count_mat <-t(imp_count_mats[[3]])
+imp_count_mat = t(imp_count_mats[[3]])
 ```
 
-## mbImpute with normalized data
+### mbImpute with normalized data
+#### CSS
+```{r}
+st=Sys.time()
+imp_count_mats_CSS = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(data_css), unnormalized = F, parallel = T, ncores=detectCores() )
+cat("Execution time ", numeric(Sys.time()-Sys.time()), "Seconds")
+imp_count_mat_CSS = t(imp_count_mats_CSS[[3]])
+```
+
+#### GMPR
 
 ```{r}
-label_samples<-read.table("metadata_table.txt",sep="\t",header=T)
-# mbImpute expect samples on rows... we need to transpose the count matrix
-imp_count_mats_gmpr <- mbImpute(condition = label_samples$DiseaseState, otu_tab = t(data_gmpr), unnormalized = F)
-#mbImpute returns a list three imputed OTU matrices. 
-#imp_count_mat_lognorm: imputed normalized and log transformed matrix. 
-#imp_count_mat_norm : imputed normalized count matrix with
-#library size of each sample equal to 10^6. 
-#imp_count_mat_origlibsize: imputed countmatrix at the original library size.
-
-imp_count_mat_gmpr <-t(imp_count_mats_gmpt[[3]])
+st=Sys.time()
+imp_count_mats_gmpr <- mbImpute(condition = METADATA$DiseaseState, otu_tab = t(data_gmpr), unnormalized = F, parallel = T, ncores=detectCores() )
+cat("Execution time ", numeric(Sys.time()-Sys.time()), "Seconds")
+imp_count_mat_gmpr <-t(imp_count_mats_gmpr[[3]])
 ```
 
-## From Professor
-
-```{r include = FALSE}
-PCA<-function(dati,condition){
-  dati<-t(dati) # 
-  N<-dim(dati)[1] #objects
-  M<-dim(dati)[2] #genes (variables)
-  S<-cov(dati)
-  Eig<-eigen(S)
-  lambda<-Eig[[1]] #eigenvalues
-  PCs<-Eig[[2]] #eigenvectors (matrix V)
-  varperc<-rep(0,M)
-  for (i in (1:M)) 
-    varperc[i]<-sum(lambda[1:i])/sum(lambda)
-  plot(varperc,type="b")
-  Y<-dati%*%PCs # projection of the N objects in the new coordinates along the M PCs
-  nmc<-names(table(condition))
-  L<-length(nmc)
-  plot(Y[,1],Y[,2]) # in this plot I am showing data in D=2 dim
-  for (i in (2:L))
-      points(Y[which(condition==nmc[i]),1],Y[which(condition==nmc[i]),2],col=(i+1))
-  #data can be reconstructed
-  #rec_dati<-Y%*%t(PCs)
-
-  return(list(Y,PCs,lambda))
-
-}
-```
-
-```{r}
-resPCA<-PCA(feature_table_gen,condition=label_samples$DiseaseState)
-```
-
-```{r}
-resPCA<-PCA(feature_table_gen_gmpr,condition=label_samples$DiseaseState)
-```
-
-```{r}
-resPCA<-PCA(clrtransform,condition=label_samples$DiseaseState)
-```
-
-```{r}
-resPCA<-PCA(imp_count_mat,condition=label_samples$DiseaseState)
-```
-
-```{r, message=FALSE}
-## Imputing the data and clr transform to work on Euclidean space
-# Clr transformation without pseudocounts on imputed data
-np<-dim(imp_count_mat)[2] #number of samples
-nt<-dim(imp_count_mat)[1] #number of taxa
-impclr_count_mat<-imp_count_mat #just to initialize clrtransform
-for (i in (1:np)) {
-  x<-imp_count_mat[,i]
-  x[which(x==0)]<-NA
-  den<-(prod(x,na.rm=TRUE)^(1/length(which(!is.na(x))))) #geometric mean of column i (excluding 0)
-  impclr_count_mat[,i]<-log2(x/den) #clr transformation of column i
-  impclr_count_mat[which(is.na(x)),i]<-0
-}
-head(imp_count_mat)[1:5,1:10]
-head(impclr_count_mat)[1:5,1:10]
-resPCA<-PCA(impclr_count_mat,condition=label_samples$DiseaseState)
-```
-
-```{r message = FALSE}
-save.image("preprocessing.RData")
-```
-
-# Part b
-
-Run **DA analysis** using `Aldex` and `Ancom` and **compare results**
-
+---
+#PART B - DA analysis
+##ALDEx2
 ```{r}
 library(ALDEx2)
-aldex_results<- aldex(reads = DATA, conditions =label_samples$DiseaseState, mc.samples = 128, test = "t")
-
+aldex_results<- aldex(reads = DATA, conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
 ```
 
 -   **rab.all**: a vector containing the median clr value for each feature in all samples
-
 -   **rab.win.CDI**: a vector containing the median clr value for each feature in condition A
-
 -   **rab.win.H**: a vector containing the median clr value for each feature in condition B
-
 -   **diff.btw**: a vector containing the per-feature median difference between condition A and B
-
 -   **diff.win**: a vector containing the per-feature maximum median difference between Dirichlet instances within conditions
-
 -   **effect**: a vector containing the per-feature \*effect size\* : \$\\dfrac{diff.btw}{max(diff.win)}\$.
-
 -   **overlap**: a vector containing the per-feature proportion of effect size that is 0 or less (no-effect)
-
 -   **we.ep**: a vector containing the expected p-value of Welch's t-test for each feature
-
 -   **we.eBH**: a vector containing the corresponding expected value of the Benjamini-Hochberg corrected p-value for each feature
-
 -   **wi.ep**: a vector containing the expected p-value of the Wilcoxon Rank Sum test for each feature
-
 -   **wi.eBH**: a vector containing the corresponding expected value of the Benjamini-Hochberg corrected p-value for each feature
 
 Keep in mind that if taxa have 0 counts across all subjects they are removed before runing the method
@@ -316,15 +242,16 @@ Therefore you might have a number of taxa in output which is lower than the numb
 head(aldex_results)
 ```
 
-
+##ANCOM
 
 ## ANCOM-II
 
 The method is not available in R, but you can download it from [GitHub](https://github.com/FrederickHuangLin/ANCOM) A copy is on stem. 
 
 ```{r message = FALSE}
-install_github("FrederickHuangLin/ANCOM")
-library("ancom")
+#install_github("FrederickHuangLin/ANCOM")
+#library("ancom")
+source("ancom.R")
 ```
 
 There are 2 functions
@@ -342,11 +269,13 @@ There are 2 functions
 
 ```{r}
 # data.frame metadata
-metadata<- data.frame("sample_id"=colnames(feature_table_gen), "group"=label_samples$DiseaseState)
+data=DATA
+metadata<- data.frame("sample_id"=colnames(data), "group"=METADATA$DiseaseState)
 
 # Preprocessing degli zeri di ANCOM-II
 # (alcuni parametri non hanno default-->settati con i default di ANCOM-BC)
-prepro<- feature_table_pre_process(feature_table = feature_table_gen, meta_data = metadata,sample_var = "sample_id", group_var = "group", out_cut = 0.05, zero_cut = 0.9, lib_cut = 1000, neg_lb = T)
+prepro<- feature_table_pre_process(feature_table = data, meta_data = metadata,sample_var = "sample_id", group_var = "group", out_cut = 0.05, zero_cut = 0.9, lib_cut = 1000, neg_lb = T)
+head(prepro)
 ```
 
 The output is a list:
@@ -396,9 +325,102 @@ legend(30, 1, legend=c("detected_06", "detected_07", "detected_08", "detected_09
        col=c("red", "blue", "green", "orange"), lty = 1)
 ```
 
-
-# Part c
+---
+# PART C
 
 Based on the results obtained in [Part b](Part%20b), **select a set of DA taxa** and, based only on those taxa, **run `NMDS`, `t-sne` and `UMAP`** to project healthy donors and the patients on 2 dimension.
 
 > Are These plots equal to the ones obtained using all taxa instead of using only the DA?
+
+## tsne
+```{r}
+#BiocManager::install("M3C")
+library(M3C)
+
+METADATA<-read.table("metadata_table.txt",sep="\t",header=T)
+tsne(DATA,labels=METADATA$DiseaseState,perplex=10)
+# mydata:  Data frame or matrix: if dataframe/matrix should have samples as columns and rows as features
+# labels:  Character vector: if we want to just label with gender for example
+# perplex: Numerical value: perplexity value that Rtsne uses internally
+# ...
+```
+
+```{r}
+tsne(data_clr,labels=METADATA$DiseaseState,perplex=10)
+```
+
+```{r}
+tsne(imp_count_mat,labels=METADATA$DiseaseState,perplex=10)
+```
+
+```{r}
+tsne(impclr_count_mat,labels=METADATA$DiseaseState,perplex=10)
+```
+
+
+## Umap
+
+```{r}
+#BiocManager::install("umap")
+library(umap)
+umap.defaults
+# help(umap.defaults)
+```
+
+
+```{r}
+#REMEMBER to TRANSPOSE THE MATRIX (IF NEEDED)samples to be projected must be on rows
+res.umap <- umap(t(DATA))
+head(res.umap$layout)
+#plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+```
+
+```{r}
+res.umap <- umap(t(data_clr))
+head(res.umap$layout, 3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+```
+
+```{r}
+res.umap <- umap(t(impclr_count_mat),n_neighbours=5, n_components=3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+plot(res.umap$layout[,1],res.umap$layout[,3])
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,3],col=2)
+
+plot(res.umap$layout[,2],res.umap$layout[,3])
+points(res.umap$layout[indCDI,2],res.umap$layout[indCDI,3],col=2)
+```
+
+
+## NMDS
+```{r}
+#BiocManager::install("vegan")
+library(vegan)
+
+res.nmds = metaMDS(t(imp_count_mat),distance="bray")
+
+#extract x and y coordinates and plot
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+```
+
+```{r}
+#BiocManager::install("vegan")
+library(vegan)
+
+res.nmds = metaMDS(t(impclr_count_mat),distance="euclidean")
+
+#extract x and y coordinates and plot
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+```
