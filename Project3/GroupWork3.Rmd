@@ -53,6 +53,7 @@ Chose which type(s) of **data transformation** (`clr`, `alr`) **normalization** 
 
 ## Data Transofrmation
 
+###clr
 $${\displaystyle clr(x)=\left(\log x_i-\frac 1 {nt} \sum_{j=1}^{nt}\log x_j\right)_i=\log\left(\frac{x_i}{\left(\Pi_{j=1}^{nt}x_j\right)^\frac1{nt}}\right)_i}$$
 
 ```{r}
@@ -70,8 +71,6 @@ my.clr <- function (data){
   } 
   out
 }
-
-
 ```
 
 ```{r}
@@ -127,10 +126,29 @@ head(data_myalr[,1:5])
 head(data_alr[,1:5])
 ```
 
+## Zero Imputation
+
+### mbImpute
+mbImpute returns a list three imputed OTU matrices. 
+imp_count_mat_lognorm: imputed normalized and log transformed matrix. 
+imp_count_mat_norm : imputed normalized count matrix with
+library size of each sample equal to 10^6. 
+imp_count_mat_origlibsize: imputed countmatrix at the original library size.
+
+```{r}
+# mbImpute expect samples on rows... we need to transpose the count matrix
+st=Sys.time()
+imp_count_mats = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(DATA), unnormalized = T, parallel = TRUE, ncores=detectCores() )
+cat("Execution time ", numeric(Sys.time()-st), "Seconds")
+head(imp_count_mats)
+
+imp_count_mat = t(imp_count_mats[[3]])
+```
+
 ## Normalization
 ### CSS - Cumulative Sum Scaling 
 ```{r}
-data=DATA
+
 metaSeqObject = newMRexperiment(data,phenoData = METADATA.annotdf) #samples on the column and row has to be the feature
 metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
 OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
@@ -139,6 +157,26 @@ OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = TRUE, log = 
 ```{r}
 head(DATA[,1:5])
 head(metaSeqObject_CSS[,1:5])
+head(OTU_read_count_CSS)
+```
+
+####myCSS
+
+```{r}
+my.CSS <- function(data){
+  list_quantiles=seq(0.01,0.99,0.01)
+  quantile_matrix=apply(data,MARGIN = 2, FUN=(function(x) {quantile(x,list_quantiles)}));
+  quantile_median=apply(quantile_matrix,MARGIN=1, FUN=median)
+  distance = as.matrix(t(sapply(1:99,FUN=(function(x){quantile_matrix[x,]-quantile_median[x]}) )))
+  med.distance = apply(distance, MARGIN = 1, FUN = median)
+  increments=(distance[2:99]-distance[1:98])/distance[1:98]
+  l=which(increments>0.1 & is.finite(increments))[1]
+  #colsum(data[
+   # data[,i]<quantile_matrix[l,i]
+    #,i])
+}  
+l=my.CSS(DATA)
+
 ```
 
 
@@ -150,7 +188,7 @@ library(GMPR)
 
 ```{r}
 # GMPR expect samples on rows... we need to transpose the count matrix
-GMPR_factors<- GMPR(OTUmatrix = as.data.frame(DATA), min_ct = 2, intersect_no = 4) #see help for parameters meaning
+GMPR_factors<- GMPR(OTUmatrix = as.data.frame.matrix(t(DATA)), min_ct = 2, intersect_no = 4) #see help for parameters meaning
 data_gmpr<- t(t(DATA)/GMPR_factors)
 ```
 
@@ -163,64 +201,40 @@ head(data_gmpr[,1:5])
 ### My GMPR
 
 ```{r}
-#my.gmprsizefactor <- function(x,data){
-#  pr=x/data
-#  pr[is.nan(pr)|pr==0|is.infinite(pr)]<-NA
-#  medians=apply(pr, 2, median, na.rm=TRUE)
-#  incl.no <- colSums(!is.na(pr))		
-#  out=exp(mean(log(medians[incl.no>=4])))
-#  out
-#}
-#
-#
-#my.sizefactors_gmpr=as.vector(
-#  apply(DATA, MARGIN=2,FUN=my.gmprsizefactor, data=DATA)
-#)
+my.gmprsizefactor <- function(x,data){
+  data[data<2]=NA
+  pr=data[,x]/data[,-x]
+  pr[is.na(pr)|pr==0|is.infinite(pr)]<-NA
+  medians=apply(pr, MARGIN=2,FUN=(function(x) median(x, na.rm=TRUE)))
+  incl.no <- colSums(!is.na(pr))		
+  out=exp(mean(log(medians[incl.no>=4])))
+  out
+}
+
+
+#my.sizefactors_gmpr=  apply(DATA, MARGIN=2,FUN=my.gmprsizefactor, data=DATA)
+my.sizefactors_gmpr=  sapply(1:ncol(DATA), FUN=my.gmprsizefactor, data=DATA)
+my.sizefactors_gmpr
+
 ```
 
-## Zero Imputation
-
-### mbImpute
-
-```{r}
-# mbImpute expect samples on rows... we need to transpose the count matrix
-st=Sys.time()
-imp_count_mats = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(DATA), unnormalized = T, parallel = TRUE, ncores=detectCores() )
-cat("Execution time ", numeric(Sys.time()-st), "Seconds")
-#mbImpute returns a list three imputed OTU matrices. 
-#imp_count_mat_lognorm: imputed normalized and log transformed matrix. 
-#imp_count_mat_norm : imputed normalized count matrix with
-#library size of each sample equal to 10^6. 
-#imp_count_mat_origlibsize: imputed countmatrix at the original library size.
-head(imp_count_mats)
-
-imp_count_mat = t(imp_count_mats[[3]])
-```
-
-### mbImpute with normalized data
-#### CSS
-```{r}
-st=Sys.time()
-imp_count_mats_CSS = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(data_css), unnormalized = F, parallel = T, ncores=detectCores() )
-cat("Execution time ", numeric(Sys.time()-Sys.time()), "Seconds")
-imp_count_mat_CSS = t(imp_count_mats_CSS[[3]])
-```
-
-#### GMPR
-
-```{r}
-st=Sys.time()
-imp_count_mats_gmpr <- mbImpute(condition = METADATA$DiseaseState, otu_tab = t(data_gmpr), unnormalized = F, parallel = T, ncores=detectCores() )
-cat("Execution time ", numeric(Sys.time()-Sys.time()), "Seconds")
-imp_count_mat_gmpr <-t(imp_count_mats_gmpr[[3]])
-```
 
 ---
 #PART B - DA analysis
+#### Data
+```{r}
+data.clr = my.clr(DATA)
+data.imp = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(DATA), unnormalized = T, parallel = TRUE, ncores=detectCores() )
+GMPR_factors = GMPR(OTUmatrix = as.data.frame(t(data.imp$imp_count_mat_lognorm*10^6)), min_ct = 2, intersect_no = 4) #see help for parameters meaning
+data.norm = t(t(data.imp$imp_count_mat_lognorm*10^6)/GMPR_factors)
+data=data.norm
+data
+```
+
 ##ALDEx2
 ```{r}
 library(ALDEx2)
-aldex_results<- aldex(reads = DATA, conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
+aldex_results<- aldex(reads = data, conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
 ```
 
 -   **rab.all**: a vector containing the median clr value for each feature in all samples
