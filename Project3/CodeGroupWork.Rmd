@@ -1,0 +1,459 @@
+---
+title: "GroupWork3"
+output: html_document
+date: "2022-12-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+if (!requireNamespace("devtools", quietly = TRUE))  install.packages("devtools")
+library(devtools)
+
+if (!requireNamespace("BiocManager", quietly = TRUE))  install.packages("BiocManager")
+if (!requireNamespace("metagenomeSeq", quitely = TRUE )) BiocManager::install("metagenomeSeq")
+library(metagenomeSeq)
+if (!requireNamespace("GUniFrac", quietly = TRUE))  install.packages("GUniFrac")
+library(GUniFrac)
+if (!requireNamespace("glmnet", quietly = TRUE))  install.packages("glmnet")
+library(glmnet)
+if (!requireNamespace("Matrix", quietly = TRUE))  install.packages("Matrix")
+library(Matrix)
+if (!requireNamespace("mbImpute", quietly = TRUE))  install_github("ruochenj/mbImpute/mbImpute R package")
+library(mbImpute)
+if(!require(compositions)) install.packages(compositions)
+library(compositions)
+library(parallel)
+```
+
+# Data
+
+The file `Genus_otu_table.txt` is tab delimited file. Contains raw count data of 16S sequencing of fecal samples from healthy donors and patients affected by clostridium difficile, summarized at genus level
+
+```{r}
+DATA.FILENAME="Genus_otu_table.txt"
+DATA=as.matrix(read.table(DATA.FILENAME, sep = "\t"))
+paste("Sparsity =", round(sum(DATA==0)/length(DATA)*100, digits = 1))
+head(DATA[,1:5])
+
+METADATA.filename="metadata_table.txt"
+METADATA=read.table(METADATA.filename, header = TRUE, sep ="\t")
+rownames(METADATA)=METADATA$ID
+METADATA.annotdf=as(METADATA,"AnnotatedDataFrame")
+head(METADATA)
+```
+
+
+# PART A
+
+Chose which type(s) of **data transformation** (`clr`, `alr`) **normalization** (`GMPR`, `CSS`, `TMM`) **imputation** (`mbImoute`) you want to perform on data
+
+## Data Transofrmation
+
+###clr
+$${\displaystyle clr(x)=\left(\log x_i-\frac 1 {nt} \sum_{j=1}^{nt}\log x_j\right)_i=\log\left(\frac{x_i}{\left(\Pi_{j=1}^{nt}x_j\right)^\frac1{nt}}\right)_i}$$
+
+```{r}
+my.clr <- function (data){
+  np = dim(data)[2] #number of samples
+  nt = dim(data)[1] #number of taxa
+  out = data 
+  is.ok = !(data==0 | is.na(data) | is.infinite(data))
+  data[!is.ok]=NA
+  
+  for (i in (1:np)) {
+    out[,i]<- ifelse(is.ok[,i]  # clr transformation of column i or 0
+     , log(data[,i]) - sum(log(data[,i]), na.rm = TRUE) / sum(is.ok[,i]) 
+     , 0)
+  } 
+  out
+}
+```
+
+```{r, include=TRUE}
+# Check correctness
+data.psc_myclr=my.clr(DATA+1) # psc -> pseudocounts
+data.psc_clr=as.matrix(t(clr(t(DATA+1))))
+head(data.psc_myclr[,1:5])
+head(data.psc_clr[,1:5])
+#rm(data.psc_myclr,data.psc_clr)
+
+
+data_myclr=my.clr(DATA)
+data_clr=as.matrix(t(clr(t(DATA))))
+head(data_myclr[,1:5])
+head(data_clr[,1:5])
+#rm(data_myclr,data_clr)
+
+```
+
+### alr
+The alr-transform maps a composition in the D-part Aitchison-simplex non-isometrically to a D-1 dimensonal euclidian vector, treating the last part as common denominator of the others. The data can then be analysed in this transformation by all classical multivariate analysis tools not relying on a distance. The interpretation of the results is relatively simple, since the relation to the original D-1 first parts is preserved. However distance is an extremely relevant concept in most types of analysis, where a clr or ilr transformation should be preferred.
+The additive logratio transform is given by
+
+$${\displaystyle \operatorname {alr} (x)=\left(\log {\frac {x_{1}}{x_{D}}}\right)_i}$$
+```{r}
+my.alr <- function (data){
+  # select reference | 
+  is.ok = data>0 & is.finite(data)
+  data = ifelse(is.ok, data, NA)
+
+  num.zero = apply(is.na(data),MARGIN=1,FUN=sum) #Count number of zeroes by row
+  r = which.min(num.zero)                    #Index corresponding to row with lowest number of zeroes
+  #cat(sprintf("Reference taxa is the %d (%s) with %d zero \n\n",r, rownames(DATA)[r],  num.zero[r])) 
+  
+  out=data
+  #problem we haven't a taxa present in all the sample we have to replace 0's with 1's. Also, I am going to     use as reference the one with lower number of 0's 
+  for (i in 1:ncol(data)){
+    out[,i]=log(data[,i] / data[r,i]) 
+  }
+  out[is.na(out)]=-Inf # TODO replace "replace NA" with "replace 0" where !is.ok
+  return(out)
+}
+
+
+```
+
+```{r,include=}
+data_myalr = my.alr(DATA)
+
+num.zero = apply(!(DATA>0 & is.finite(DATA)),MARGIN=1,FUN=sum)
+r = which.min(num.zero)
+data_alr = t(alr(t(DATA), ivar = r))
+
+head(DATA[,1:5])
+head(data_myalr[,1:5])
+head(data_alr[,1:5])
+#rm(data_myalr, data_alr)
+```
+## Zero Imputation
+
+### mbImpute
+mbImpute returns a list three imputed OTU matrices. 
+imp_count_mat_lognorm: imputed normalized and log transformed matrix. 
+imp_count_mat_norm : imputed normalized count matrix with
+library size of each sample equal to 10^6. 
+imp_count_mat_origlibsize: imputed countmatrix at the original library size.
+
+```{r}
+st=Sys.time()
+mbImpute.matrices = mbImpute(
+  condition = METADATA$DiseaseState
+  , otu_tab = t(DATA)
+  , metadata=METADATA
+  , unnormalized = T
+  , parallel = TRUE, ncores=detectCores() )
+cat("Execution time ", numeric(Sys.time()-st), " Seconds")
+
+head(mbImpute.matrices$imp_count_mat_lognorm)
+head(mbImpute.matrices$imp_count_mat_norm)
+head(mbImpute.matrices$imp_count_mat_origlibsize)
+
+mbImputed.matrix = t(mbImpute.matrices$imp_count_mat_origlibsize)
+
+```
+
+
+## Normalization
+### CSS - Cumulative Sum Scaling 
+```{r}
+metaSeqObject = newMRexperiment(data,phenoData = METADATA.annotdf) #samples on the column and row has to be the feature
+metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
+OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
+# returns normalized and log transformed data.
+```
+```{r}
+head(DATA[,1:5])
+head(metaSeqObject_CSS[,1:5])
+head(OTU_read_count_CSS)
+```
+
+####myCSS
+
+```{r}
+my.CSS <- function(data){
+  list_quantiles=seq(0.01,0.99,0.01)
+  quantile_matrix=apply(data,MARGIN = 2, FUN=(function(x) {quantile(x,list_quantiles)}));
+  quantile_median=apply(quantile_matrix,MARGIN=1, FUN=median)
+  distance = as.matrix(t(sapply(1:99,FUN=(function(x){quantile_matrix[x,]-quantile_median[x]}) )))
+  med.distance = apply(distance, MARGIN = 1, FUN = median)
+  increments=(distance[2:99]-distance[1:98])/distance[1:98]
+  l=which(increments>0.1 & is.finite(increments))[1]
+  #colsum(data[
+   # data[,i]<quantile_matrix[l,i]
+    #,i])
+}  
+l=my.CSS(DATA)
+
+```
+
+
+### GMPR
+```{r}
+if(!requireNamespace("GMPR",quitely = TRUE)) install_github("lichen-lab/GMPR")
+library(GMPR)
+```
+
+```{r}
+# GMPR expect samples on rows... we need to transpose the count matrix
+GMPR_factors<- GMPR(OTUmatrix = as.data.frame.matrix(t(DATA)), min_ct = 2, intersect_no = 4) #see help for parameters meaning
+data_gmpr<- t(t(DATA)/GMPR_factors)
+```
+
+```{r}
+GMPR_factors[1:5]
+head(DATA[,1:5])
+head(data_gmpr[,1:5])
+```
+
+#### My GMPR
+
+```{r}
+my.gmprsizefactor <- function(x,data){
+  data[data<2]=NA
+  pr=data[,x]/data[,-x]
+  pr[is.na(pr)|pr==0|is.infinite(pr)]<-NA
+  medians=apply(pr, MARGIN=2,FUN=(function(x) median(x, na.rm=TRUE)))
+  incl.no <- colSums(!is.na(pr))		
+  out=exp(mean(log(medians[incl.no>=4])))
+  out
+}
+
+
+#my.sizefactors_gmpr=  apply(DATA, MARGIN=2,FUN=my.gmprsizefactor, data=DATA)
+my.sizefactors_gmpr=  sapply(1:ncol(DATA), FUN=my.gmprsizefactor, data=DATA)
+my.sizefactors_gmpr
+
+```
+
+
+---
+#PART B - DA analysis
+#### Data
+```{r}
+data.clr = my.clr(DATA)
+data.imp = mbImpute(condition = METADATA$DiseaseState, otu_tab = t(DATA), unnormalized = T, parallel = TRUE, ncores=detectCores() )
+GMPR_factors = GMPR(OTUmatrix = as.data.frame(t(data.imp$imp_count_mat_lognorm*10^6)), min_ct = 2, intersect_no = 4) #see help for parameters meaning
+data.norm = t(t(data.imp$imp_count_mat_lognorm*10^6)/GMPR_factors)
+data=data.norm
+data
+```
+
+##ALDEx2
+```{r}
+library(ALDEx2)
+aldex_results<- aldex(reads = data, conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
+```
+
+-   **rab.all**: a vector containing the median clr value for each feature in all samples
+-   **rab.win.CDI**: a vector containing the median clr value for each feature in condition A
+-   **rab.win.H**: a vector containing the median clr value for each feature in condition B
+-   **diff.btw**: a vector containing the per-feature median difference between condition A and B
+-   **diff.win**: a vector containing the per-feature maximum median difference between Dirichlet instances within conditions
+-   **effect**: a vector containing the per-feature \*effect size\* : \$\\dfrac{diff.btw}{max(diff.win)}\$.
+-   **overlap**: a vector containing the per-feature proportion of effect size that is 0 or less (no-effect)
+-   **we.ep**: a vector containing the expected p-value of Welch's t-test for each feature
+-   **we.eBH**: a vector containing the corresponding expected value of the Benjamini-Hochberg corrected p-value for each feature
+-   **wi.ep**: a vector containing the expected p-value of the Wilcoxon Rank Sum test for each feature
+-   **wi.eBH**: a vector containing the corresponding expected value of the Benjamini-Hochberg corrected p-value for each feature
+
+Keep in mind that if taxa have 0 counts across all subjects they are removed before runing the method
+Therefore you might have a number of taxa in output which is lower than the number of taxa in input
+
+```{r message=FALSE}
+head(aldex_results)
+```
+
+##ANCOM
+
+## ANCOM-II
+
+The method is not available in R, but you can download it from [GitHub](https://github.com/FrederickHuangLin/ANCOM) A copy is on stem. 
+
+```{r message = FALSE}
+#install_github("FrederickHuangLin/ANCOM")
+#library("ancom")
+source("ancom.R")
+```
+
+There are 2 functions
+*feature_table_pre_process* implements the preprocessing 
+
+* ***feature_table:*** Data.frame or count matrix with taxa on rows
+* ***meta_data:*** Data.frame or matrix of metadata
+* ***sample_var:*** name of the column in meta_data with samples IDs.
+* ***group_var:*** Nname of the column in meta_data with
+* ***out_cut:*** number between 0 and 1. Observations below *out_cut* will be considered outliers zeros 
+* ***zero_cut:*** number between 0 and 1. This is parameter h used to further define the outlier zeros
+* ***lib_cut:*** samples with seq depth lower than lib_cut are excluded from the analysis
+* ***neg_lb:*** neg_lb = FALSE considers biological 0 (structural 0) only counts that are 0 acroos all samples within one group. If TRUE also small values are considered as 0.
+
+
+```{r}
+# data.frame metadata
+data=DATA
+metadata<- data.frame("sample_id"=colnames(data), "group"=METADATA$DiseaseState)
+
+# Preprocessing degli zeri di ANCOM-II
+# (alcuni parametri non hanno default-->settati con i default di ANCOM-BC)
+prepro<- feature_table_pre_process(
+  feature_table = data
+  , meta_data = metadata
+  , sample_var = "sample_id"
+  , group_var = "group"
+  , out_cut = 0.05
+  , zero_cut = 0.9
+  , lib_cut = 1000
+  , neg_lb = T
+  )
+head(prepro)
+```
+
+The output is a list:
+
+* ***feature_table:*** Data.frame or count matrix with taxa on rows
+* ***meta_data:*** Data.frame or matrix of metadata
+* ***structure_zeros:*** matrix (taxa on rows and groups on columns) with 1 indicating that the corresponding taxon is a biological (i.e. structural) 0
+
+
+```{r results='hide'}
+# Let's run ANCOM-II
+feature_table<- prepro$feature_table
+meta_data<- prepro$meta_data
+struc_zero<- prepro$structure_zeros
+
+ancom_results <- ANCOM(feature_table = feature_table, meta_data = meta_data, 
+                       struc_zero = struc_zero, main_var = "group", p_adj_method = "BH", 
+                       alpha = 0.05)
+```
+The output is a list:
+
+* ***p_data:*** Matrix of p_values between taxa (pairwise)
+* ***q_data:*** Matrix of p_values between taxa (pairwise)
+* ***out:*** Data.frame with W statistics for each taxon. Columns indicates different cutoffs on W (0,9, 0,8, 0,7, 0,6). TRUE or FALSE indicate if the taxon pass the threshold (is DA)
+* ***fig:*** Volcano plot (ggplot object) of W vs CLR. 
+
+
+```{r ancom_volcano}
+plot(ancom_results$fig)
+ancom_results[[3]]
+```
+
+Let's analyze the statistic W
+
+```{r W-statistic}
+
+W_stat<- ancom_results$out$W[is.finite(ancom_results$out$W)]
+n_taxa<- length(W_stat) 
+
+
+plot(ecdf(W_stat[is.finite(W_stat)]), main ="Empirical cumulative distribution function for W ", xlab = "W")
+abline(v = n_taxa*0.6, col = "red")
+abline(v = n_taxa*0.7, col = "blue")
+abline(v = n_taxa*0.8, col = "green")
+abline(v = n_taxa*0.9, col = "orange")
+legend(30, 1, legend=c("detected_06", "detected_07", "detected_08", "detected_09"), 
+       col=c("red", "blue", "green", "orange"), lty = 1)
+```
+
+---
+# PART C
+
+Based on the results obtained in [Part b](Part%20b), **select a set of DA taxa** and, based only on those taxa, **run `NMDS`, `t-sne` and `UMAP`** to project healthy donors and the patients on 2 dimension.
+
+> Are These plots equal to the ones obtained using all taxa instead of using only the DA?
+
+## tsne
+```{r}
+#BiocManager::install("M3C")
+library(M3C)
+
+METADATA<-read.table("metadata_table.txt",sep="\t",header=T)
+tsne(DATA,labels=METADATA$DiseaseState,perplex=10)
+# mydata:  Data frame or matrix: if dataframe/matrix should have samples as columns and rows as features
+# labels:  Character vector: if we want to just label with gender for example
+# perplex: Numerical value: perplexity value that Rtsne uses internally
+# ...
+```
+
+```{r}
+tsne(data_clr,labels=METADATA$DiseaseState,perplex=10)
+```
+
+```{r}
+tsne(imp_count_mat,labels=METADATA$DiseaseState,perplex=10)
+```
+
+```{r}
+tsne(impclr_count_mat,labels=METADATA$DiseaseState,perplex=10)
+```
+
+
+## Umap
+
+```{r}
+#BiocManager::install("umap")
+library(umap)
+umap.defaults
+# help(umap.defaults)
+```
+
+
+```{r}
+#REMEMBER to TRANSPOSE THE MATRIX (IF NEEDED)samples to be projected must be on rows
+res.umap <- umap(t(DATA))
+head(res.umap$layout)
+#plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+```
+
+```{r}
+res.umap <- umap(t(data_clr))
+head(res.umap$layout, 3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+```
+
+```{r}
+res.umap <- umap(t(impclr_count_mat),n_neighbours=5, n_components=3)
+plot(res.umap$layout[,1],res.umap$layout[,2])
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+plot(res.umap$layout[,1],res.umap$layout[,3])
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,3],col=2)
+
+plot(res.umap$layout[,2],res.umap$layout[,3])
+points(res.umap$layout[indCDI,2],res.umap$layout[indCDI,3],col=2)
+```
+
+
+## NMDS
+```{r}
+#BiocManager::install("vegan")
+library(vegan)
+
+res.nmds = metaMDS(t(imp_count_mat),distance="bray")
+
+#extract x and y coordinates and plot
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+```
+
+```{r}
+#BiocManager::install("vegan")
+library(vegan)
+
+res.nmds = metaMDS(t(impclr_count_mat),distance="euclidean")
+
+#extract x and y coordinates and plot
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+```
