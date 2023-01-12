@@ -1,0 +1,313 @@
+---
+title: "Group3 -- Ex3"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+
+```{r include = FALSE}
+if (!requireNamespace("devtools", quietly = TRUE))  install.packages("devtools")
+library(devtools)
+
+if (!requireNamespace("BiocManager", quietly = TRUE))  install.packages("BiocManager")
+if (!requireNamespace("metagenomeSeq", quitely = TRUE )) BiocManager::install("metagenomeSeq")
+library(metagenomeSeq)
+if (!requireNamespace("GUniFrac", quietly = TRUE))  install.packages("GUniFrac")
+library(GUniFrac)
+if (!requireNamespace("glmnet", quietly = TRUE))  install.packages("glmnet")
+library(glmnet)
+if (!requireNamespace("Matrix", quietly = TRUE))  install.packages("Matrix")
+library(Matrix)
+if (!requireNamespace("mbImpute", quietly = TRUE))  install_github("ruochenj/mbImpute/mbImpute R package")
+library(mbImpute)
+if(!require(compositions)) install.packages(compositions)
+library(compositions)
+library(parallel)
+if(!requireNamespace("GMPR",quitely = TRUE)) install_github("lichen-lab/GMPR")
+library(GMPR)
+```
+
+# Intro {.sidebar}
+
+This dashboard covers:
+
+-   Data descirption
+
+-   Description Transformations with different reusults
+
+-   Cumulative Sum Scaling (CSS) and Geometric Mean of Pairwise Ratios (GMPR)
+
+-   Zero imputation with mbImpute
+
+-   DA analysis
+
+# Data
+## Column 1
+
+```{r, results='hide'}
+FEATURE_TABLE.filename="Genus_otu_table.txt"
+FEATURE_TABLE=as.matrix(read.table(FEATURE_TABLE.filename, sep = "\t"))
+FEATURE_TABLE_PSC=FEATURE_TABLE
+FEATURE_TABLE_PSC[FEATURE_TABLE_PSC==0]=1
+ft=FEATURE_TABLE
+
+METADATA.filename="metadata_table.txt"
+METADATA=read.table(METADATA.filename, header = TRUE, sep ="\t", row.names = 1)
+METADATA.annotdf=as(METADATA,"AnnotatedDataFrame")
+```
+### OTU counts
+OTU count table sourced from file `r FEATURE_TABLE.filename`. 
+It contains 166 Samples and 245 features (represented by taxa_id).
+```{r echo = FALSE}
+head(FEATURE_TABLE[,1:5])
+```
+
+### METADATA
+We have also a metadata file (`r METADATA.filename`) 
+```{r echo = FALSE, results = 'asis'}
+library(knitr)
+kable(METADATA[1:5,])
+```
+
+# Isomorphism
+## 
+### Additive Log Ratio (alr)
+
+$${\displaystyle \operatorname {alr} (x)=\left(\log {\frac {x_{1}}{x_{D}}}\right)_i}$$
+
+```{r}
+my.alr <- function (data){
+  # select reference | 
+  is.ok = data>0 & is.finite(data)
+  data = ifelse(is.ok, data, NA)
+
+  num.zero = apply(is.na(data),MARGIN=1,FUN=sum) #Count number of zeroes by row
+  r = which.min(num.zero)                    #Index corresponding to row with lowest number of zeroes
+  #cat(sprintf("Reference taxa is the %d (%s) with %d zero \n\n",r, rownames(DATA)[r],  num.zero[r])) 
+  
+  out=data
+  #problem we haven't a taxa present in all the sample we have to replace 0's with 1's. Also, I am going to     use as reference the one with lower number of 0's 
+  for (i in 1:ncol(data)){
+    out[,i]=log(data[,i] / data[r,i]) 
+  }
+  out[is.na(out)]=-Inf # TODO replace "replace NA" with "replace 0" where !is.ok
+  return(out)
+}
+
+myalr.findreference <- function(DATA){
+  num.zero = rowSums(DATA==0)
+  r = which.min(num.zero)
+  r[1]
+}
+```
+
+```{r}
+num.zero = rowSums(FEATURE_TABLE==0)
+#§#ft.alr=as.matrix(alr(FEATURE_TABLE,ivar = myalr.findreference(FEATURE_TABLE)))
+ft_psc.alr=as.matrix(alr(FEATURE_TABLE_PSC,ivar = myalr.findreference(FEATURE_TABLE)))
+
+#§#head(ft.alr[,1:5])
+head(ft_psc.alr[,1:5])
+
+```
+
+
+### Central Log Ratio clr
+
+$${\displaystyle clr(x)=\left(\log x_i-\frac 1 {nt} \sum_{j=1}^{nt}\log x_j\right)_i=\log\left(\frac{x_i}{\left(\Pi_{j=1}^{nt}x_j\right)^\frac1{nt}}\right)_i}$$
+
+```{r}
+my.clr <- function (data){
+  np = dim(data)[2] 
+  nt = dim(data)[1]
+  out = data 
+  is.ok = !(data==0 | is.na(data) | is.infinite(data))
+  data[!is.ok]=NA
+  
+  for (i in (1:np)) {
+    out[,i]<- ifelse(is.ok[,i]  
+     , log(data[,i]) - sum(log(data[,i]), na.rm = TRUE) / sum(is.ok[,i]) 
+     , 0)
+  } 
+  out
+}
+```
+
+```{r}
+ft.clr=my.clr(FEATURE_TABLE)
+ft_psc.clr=my.clr(FEATURE_TABLE_PSC)
+head(ft.clr[,1:5])
+head(ft_psc.clr[,1:5])
+
+# Compare with compositions::clr (they are the same)
+#ft_psc.clr=t(clr(t(FEATURE_TABLE+1)))
+#head(ft_pcs.myclr[,1:5])
+```
+### Comparison with original data
+From this small sample of datapoints we can clearly see that clr better represents our data: similar counts in the original data table are similarly represented in clr whether alr presents some incongrouences. One notable example is that, in s_3, tax_36 and tax_73 magnitudes are inverted ($tax\_36<tax\_73$ in original data and in clr but $tax\_36>tax\_73$ in alr )
+
+# Normalization
+
+### Cumulative Sum Scaling CSS
+CSS with clr transformed data does not work well since it produces many NaN values, even where not originally present in the clr transformed data.
+```{r echo=FALSE}
+css.pipeline<- function(DATA, METADATA.annotated=METADATA.annotated){
+  metaSeqObject = newMRexperiment(DATA,phenoData = METADATA.annotdf) #samples on the column and row has to be the feature
+  metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
+  OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
+  as.matrix(OTU_read_count_CSS)
+}
+```
+
+```{r}
+ft.css = css.pipeline(FEATURE_TABLE)
+ft.css.alr = alr(ft.css, ivar = myalr.findreference(ft.css))
+ft.css.clr = clr(ft.css)
+ft_psc.css = css.pipeline(FEATURE_TABLE_PSC)
+ft_psc.css.alr = as.matrix(alr(ft_psc.css, ivar = myalr.findreference(ft_psc.css)))
+ft_psc.css.clr = as.matrix(clr(ft_psc.css))
+
+ft.clr.css=css.pipeline(ft.clr)
+ft_psc.clr.css=css.pipeline(ft_psc.clr)
+ft_psc.alr.css=css.pipeline(ft_psc.alr) ##TODO from fix above
+```
+Here we present, in order, results from CSS taking in input:
+1. raw data
+2. alr transformed data
+3. clr transformed data
+```{r}
+head(as.matrix(ft.css[,1:5]))
+head(ft.css.clr[,1:5])
+head(ft.css.alr[,1:5])
+```
+
+Like before we present, in order, results from CSS taking in input:
+1. raw data with pseudocounts
+2. alr transformed data pseudocounts
+3. clr transformed data preudocounts
+```{r}
+head(as.matrix(ft_psc.css[,1:5]))
+head(ft_psc.css.clr[,1:5])
+head(ft_psc.css.alr[,1:5])
+```
+```{r}
+head(ft.clr.css)
+head(ft.alr.css)
+head(ft_psc.clr.css)
+head(ft_psc.alr.css)
+```
+
+
+
+### Geometric Mean Pairwise Ratios (GMPR)
+
+```{r}
+gmpr.pipeline <- function(DATA){
+  GMPR_factors<- GMPR(
+    OTUmatrix = as.data.frame(t(DATA))
+    , min_ct = 2
+    , intersect_no = 4)
+  data_normalized<- t(t(DATA)/GMPR_factors)
+  data_normalized
+}
+```
+
+```{r}
+ft.gmpr=gmpr.pipeline(ft)
+ft.gmpr.clr= my.clr(gmpr.api(ft))
+ft_psc.clr.gmpr=gmpr.pipeline(ft_pcs.myclr)
+ft_psc.gmpr.clr= my.clr(gmpr.api(ft+1))
+head(ft.gmpr[,1:5])
+head(ft_psc.clr.gmpr[,1:5])
+head(ft.gmpr.clr[,1:5])
+head(ft_psc.gmpr.clr[,1:5])
+```
+
+# Zero Imputation
+## Column 2 {data-width="700"}
+
+### How it works 
+
+
+```{r}
+mbimpute.pipeline<- function(DATA,METADATA){
+  mbImpute.matrices = mbImpute(
+    condition = METADATA$DiseaseState
+    , otu_tab = t(DATA)
+    , metadata=METADATA
+    , unnormalized = T
+    , parallel = TRUE, ncores=detectCores() )
+  mbImpute.matrices
+}
+ft.mbimputed=mbimpute.pipeline(FEATURE_TABLE,METADATA)
+#ft.mbimputed.clr= mbimpute.pipeline(ft.myclr,METADATA)
+ft.mbimputed.gmpr= mbimpute.pipeline(ft.gmpr,METADATA)
+ft.mbimputed.gmpr.clr=mbimpute.pipeline(ft.gmpr.clr,METADATA)
+ft.mbimputed.css= mbimpute.pipeline(ft.css,METADATA)
+ft.mbimputed.css.clr= mbimpute.pipeline(ft.css.clr,METADATA)
+
+```
+
+`r mbImpute` aims to impute likely false zero counts or low counts for a normalized OTU table of dimension $n * m$. Where $n$ is the number of biological samples and $m$ is the number of taxa. 
+
+In order to achieve our goal, we will borrow information from covariate matrix of dimension $n * p$ 
+
+The final result of the mbImpute function will output an imputed matrix of dimension n * m, which is exactly the same dimension as the input.
+
+In particular will be produced three matrices:
+`imp_count_mat_lognorm`: imputed normalized and log transformed matrix
+```{r}
+head(t(ft.mbimputed$imp_count_mat_lognorm[1:5,]))
+head(t(ft.mbimputed.GMPR$impor[1:5,]))
+head(t(ft.mbimputed.CSS$imp_count_mat_origlibsize[1:5,]))
+```
+imp_count_mat_norm : imputed normalized count matrix with library size of each sample equal to 10^6. 
+```{r}
+head(t(ft.mbimputed$imp_count_mat_lognorm[1:5,]))
+head(t(ft.mbimputed.GMPR$imp_count_mat_lognorm[1:5,]))
+```
+imp_count_mat_origlibsize: imputed countmatrix at the original library size.
+```{r}
+head(t(ft.mbimputed$imp_count_mat_lognorm)[,1:5])
+head(t(ft.mbimputed.GMPR$imp_count_mat_lognorm)[,1:5])
+```
+
+## Column 1 {data-width="300"}
+
+### Problems
+
+Code provided in the github repository `ruochenj/mbImpute` (from the original 
+authors) presents a bug:
+* if provided normalized data (`unnormalized=FALSE`) mbImpute will not scale data. This lead to incorrect imputation.
+
+.......
+......
+......
+
+### Compromise
+We ingested mbImputed with unnormalized data and proceeded with normalization after the imputation.
+
+# Differantial Abundance Methods
+ 
+### ALDEx2
+```{r}
+library(ALDEx2)
+aldex.GMPR.mbImpute<- aldex(reads = ceiling(ft.mbimputed.GMPR), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
+
+# CSS
+METADATA.filename="metadata_table.txt"
+METADATA2=read.table(METADATA.filename, header = TRUE, sep ="\t", row.names = 1)
+METADATA.annotdf2=as(as.data.frame(t(METADATA2)),"AnnotatedDataFrame")
+metaSeqObject = newMRexperiment(mbImpute.matrices$imp_count_mat_origlibsize, phenoData = METADATA.annotdf2)
+metaSeqObject_CSS = cumNorm( metaSeqObject, p = cumNormStatFast(metaSeqObject))
+data.cssNormalized = MRcounts(metaSeqObject_CSS, norm = T, log = T)
+aldex.CSS.mbImpute<- aldex(reads = css.container(t(mbImpute.matrices$imp_count_mat_origlibsize),METADATA.annotdf), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
+
+head(aldex_results)
+
+```
