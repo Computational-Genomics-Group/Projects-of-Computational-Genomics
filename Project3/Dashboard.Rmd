@@ -156,8 +156,8 @@ From this small sample of datapoints we can clearly see that clr better represen
 ### Cumulative Sum Scaling CSS
 CSS with clr transformed data does not work well since it produces many NaN values, even where not originally present in the clr transformed data.
 ```{r echo=FALSE}
-css.pipeline<- function(DATA, METADATA.annotated=METADATA.annotated){
-  metaSeqObject = newMRexperiment(DATA,phenoData = METADATA.annotdf) #samples on the column and row has to be the feature
+css.pipeline<- function(data, mtdata){
+  metaSeqObject = newMRexperiment(data,phenoData = mtdata) #samples on the column and row has to be the feature
   metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
   OTU_read_count_CSS = data.frame( MRcounts(metaSeqObject_CSS, norm = TRUE, log = TRUE))
   as.matrix(OTU_read_count_CSS)
@@ -165,16 +165,18 @@ css.pipeline<- function(DATA, METADATA.annotated=METADATA.annotated){
 ```
 
 ```{r}
-ft.css = css.pipeline(FEATURE_TABLE)
-ft.css.alr = alr(ft.css, ivar = myalr.findreference(ft.css))
+ft.css = css.pipeline(FEATURE_TABLE, METADATA.annotdf)
+r=myalr.findreference(ft.css)
+ft.css.alr = alr(ft.css, ivar = r)
 ft.css.clr = clr(ft.css)
-ft_psc.css = css.pipeline(FEATURE_TABLE_PSC)
-ft_psc.css.alr = as.matrix(alr(ft_psc.css, ivar = myalr.findreference(ft_psc.css)))
+ft_psc.css = css.pipeline(FEATURE_TABLE_PSC, METADATA.annotdf)
+r= myalr.findreference(ft_psc.css)
+#ft_psc.css.alr = css.pipeline(alr(ft_psc.css, ivar =r),METADATA.annotdf[-r])
 ft_psc.css.clr = as.matrix(clr(ft_psc.css))
 
-ft.clr.css=css.pipeline(ft.clr)
-ft_psc.clr.css=css.pipeline(ft_psc.clr)
-ft_psc.alr.css=css.pipeline(ft_psc.alr) ##TODO from fix above
+ft.clr.css=css.pipeline(ft.clr, METADATA.annotdf)
+ft_psc.clr.css=css.pipeline(ft_psc.clr, METADATA.annotdf)
+#ft_psc.alr.css=css.pipeline(ft_psc.alr, METADATA.annotdf[-r]) ##TODO from fix above
 ```
 Here we present, in order, results from CSS taking in input:
 1. raw data
@@ -183,7 +185,7 @@ Here we present, in order, results from CSS taking in input:
 ```{r}
 head(as.matrix(ft.css[,1:5]))
 head(ft.css.clr[,1:5])
-head(ft.css.alr[,1:5])
+#head(ft.css.alr[,1:5])
 ```
 
 Like before we present, in order, results from CSS taking in input:
@@ -193,13 +195,13 @@ Like before we present, in order, results from CSS taking in input:
 ```{r}
 head(as.matrix(ft_psc.css[,1:5]))
 head(ft_psc.css.clr[,1:5])
-head(ft_psc.css.alr[,1:5])
+#head(ft_psc.css.alr[,1:5])
 ```
 ```{r}
-head(ft.clr.css)
-head(ft.alr.css)
-head(ft_psc.clr.css)
-head(ft_psc.alr.css)
+head(ft.clr.css[,1:5])
+#head(ft.alr.css)
+head(ft_psc.clr.css[,1:5])
+#head(ft_psc.alr.css)
 ```
 
 
@@ -219,9 +221,9 @@ gmpr.pipeline <- function(DATA){
 
 ```{r}
 ft.gmpr=gmpr.pipeline(ft)
-ft.gmpr.clr= my.clr(gmpr.api(ft))
-ft_psc.clr.gmpr=gmpr.pipeline(ft_pcs.myclr)
-ft_psc.gmpr.clr= my.clr(gmpr.api(ft+1))
+ft.gmpr.clr= my.clr(gmpr.pipeline(ft))
+ft_psc.clr.gmpr=gmpr.pipeline(ft_psc.clr)
+ft_psc.gmpr.clr= my.clr(gmpr.pipeline(ft+1))
 head(ft.gmpr[,1:5])
 head(ft_psc.clr.gmpr[,1:5])
 head(ft.gmpr.clr[,1:5])
