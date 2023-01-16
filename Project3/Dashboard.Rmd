@@ -234,6 +234,7 @@ gmpr.pipeline <- function(DATA){
 
 ```{r}
 ft.imputed.gmpr=gmpr.pipeline(ft.mbimpute.origlibsize)
+ft.clr.gmpr=gmpr.pipeline(FEATURE_TABLE)
 head(ft.imputed.gmpr[,1:5])
 ```
 
@@ -296,18 +297,33 @@ There are 2 functions
 
 # Preprocessing degli zeri di ANCOM-II
 # (alcuni parametri non hanno default-->settati con i default di ANCOM-BC)
-ancom.pipeline(data,metadata){
-metadata<- data.frame("sample_id"=colnames(ft.imputed.gmpr), "group"=METADATA$DiseaseState)
-prepro<- feature_table_pre_process(
-  feature_table = ft.imputed.gmpr
-  , meta_data = metadata 
-  , sample_var = "sample_id"
-  , group_var = "group"
-  , out_cut = 0.05
-  , zero_cut = 0.9
-  , lib_cut = 1000
-  , neg_lb = T
-  )
+ancom.pipeline <- function(ft,METADATA){
+  metadata<- data.frame("sample_id"=colnames(ft), "group"=METADATA$DiseaseState)
+  prepro<- feature_table_pre_process(
+    feature_table = ft
+    , meta_data = metadata 
+    , sample_var = "sample_id"
+    , group_var = "group"
+    , out_cut = 0.05
+    , zero_cut = 0.9
+    , lib_cut = 1000
+    , neg_lb = T
+    )
+  prepro.data<- prepro$feature_table
+  prepro.meta_data<- prepro$meta_data
+  prepro.struc_zero<- prepro$structure_zeros
+
+  ancom_results <- ANCOM(
+    feature_table = prepro.data
+    , meta_data = prepro.meta_data
+    , struc_zero = prepro.struc_zero
+    , main_var = "group"
+    , p_adj_method = "BH"
+    , alpha = 0.05)
+  ancom_results
+}
+
+ 
 head(prepro)
 ```
 
@@ -319,18 +335,18 @@ The output is a list:
 
 
 ```{r}
-prepro.data<- prepro$feature_table
-prepro.meta_data<- prepro$meta_data
-prepro.struc_zero<- prepro$structure_zeros
+ancom.raw=ancom.pipeline(FEATURE_TABLE,METADATA)
+#ancom.clr=ancom.pipeline(my.clr(FEATURE_TABLE),METADATA)
+ancom.gmpr=ancom.pipeline(ft.gmpr,METADATA)
+#ancom.gmpr.clr=ancom.pipeline(ft.gmpr.clr,METADATA)
+ancom.clr.gmpr=ancom.pipeline(ft.clr.gmpr,METADATA)
+#ancom.css=ancom.pipeline(ft.css,METADATA)
+#ancom.clr.css=ancom.pipeline(ft.clr.css,METADATA)
 
-ancom_results <- ANCOM(
-  feature_table = prepro.data
-  , meta_data = prepro.meta_data
-  , struc_zero = prepro.struc_zero
-  , main_var = "group"
-  , p_adj_method = "BH"
-  , alpha = 0.05)
-ancom_results
+sum(ancom.raw$out$detected_0.7)
+sum(ancom.gmpr$out$detected_0.7)
+sum(ancom.clr.gmpr$out$detected_0.7)
+
 ```
 The output is a list:
 
