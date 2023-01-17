@@ -32,6 +32,12 @@ library(compositions)
 library(parallel)
 if(!requireNamespace("GMPR",quitely = TRUE)) install_github("lichen-lab/GMPR")
 library(GMPR)
+#BiocManager::install("M3C")
+library(M3C)
+#BiocManager::install("umap")
+library(umap)
+#BiocManager::install("vegan")
+library(vegan)
 ```
 
 # Intro {.sidebar}
@@ -59,6 +65,9 @@ ft=FEATURE_TABLE
 METADATA.filename="metadata_table.txt"
 METADATA=read.table(METADATA.filename, header = TRUE, sep ="\t", row.names = 1)
 METADATA.annotdf=as(METADATA,"AnnotatedDataFrame")
+
+tot_zeros<- sum(FEATURE_TABLE==0)
+paste("Sparsity =", round(tot_zeros/length(FEATURE_TABLE)*100, digits = 1))
 ```
 ### OTU counts
 OTU count table sourced from file `r FEATURE_TABLE.filename`. 
@@ -71,11 +80,11 @@ head(FEATURE_TABLE[,1:5])
 We have also a metadata file (`r METADATA.filename`) 
 ```{r echo = FALSE, results = 'asis'}
 library(knitr)
-#kable(METADATA[1:5,])
+kable(METADATA[1:5,])
 ```
 
 # Isomorphism
-## 
+##
 ### Additive Log Ratio (alr)
 
 $${\displaystyle \operatorname {alr} (x)=\left(\log {\frac {x_{1}}{x_{D}}}\right)_i}$$
@@ -136,16 +145,19 @@ my.clr <- function (data){
 ```
 
 ```{r}
-ft.clr=my.clr(FEATURE_TABLE)
-ft.clr=clr(FEATURE_TABLE)
+#ft.clr=as.matrix(my.clr(FEATURE_TABLE))
+ft.clr=as.matrix(t(clr(t(FEATURE_TABLE))))
+colnames(ft.clr)=colnames(FEATURE_TABLE)
+rownames(ft.clr)=rownames(FEATURE_TABLE)
 head(ft.clr[,1:5])
 ```
 ### Comparison with original data
 
 
-From this small sample of datapoints we can clearly see that clr better represents our data: similar counts in the original data table are similarly represented in clr whether alr presents some incongrouences. One notable example is that, in $s_3$, $tax_36$ and $tax_73$ magnitudes are inverted ($tax\_36<tax\_73$ in original data and in clr but $tax\_36>tax\_73$ in alr).
+From this small sample of datapoints we can clearly see that clr better represents our data: similar counts in the original data table are similarly represented in clr whether alr presents some incongrouences. One notable example is that, in $s_3$, $tax_36$ and $tax_73$ magnitudes are inverted ($tax\_36<tax\_73$ in original data and in clr but $tax\_36>tax\_73$ in alr). Clr works better than alt in count table with high sparsity
 
-In any case, isomorphism are already done by normalization methods (both ANCOM-II and ALDEx2) and we do not need to explicitly apply them.
+
+Since both ALDEx2 and ANCOM perform clr automatically, we did not perform this type of transformation before applying the two algorithms, it would introduce bias.
 
 # Zero Imputation
 ## Column 2 {data-width="700"}
@@ -154,18 +166,17 @@ In any case, isomorphism are already done by normalization methods (both ANCOM-I
 
 
 ```{r}
-mbimpute.pipeline<- function(DATA,METADATA){
+mbimpute.pipeline<- function(DATA,METADATA, unnormalized=T){
   mbImpute.matrices = mbImpute(
     condition = METADATA$DiseaseState
     , otu_tab = t(DATA)
     , metadata=METADATA
-    , unnormalized = T
+    , unnormalized = unnormalized
     , parallel = TRUE, ncores=detectCores() )
   mbImpute.matrices
 }
 ft.mbimputed=mbimpute.pipeline(FEATURE_TABLE,METADATA)
-ft.mbimputed.clr= mbimpute.pipeline(ft.clr,METADATA)
-ft.mbimputed.clrl= mbimpute.pipeline(ft.clr,METADATA)
+
 
 ```
 
@@ -178,8 +189,8 @@ The final result of the mbImpute function will output an imputed matrix of dimen
 In particular will be produced three matrices:
 `imp_count_mat_lognorm`: imputed normalized and log transformed matrix
 ```{r}
-head(t(ft.mbimputed$imp_count_mat_origlibsize[1:5,]))
 ft.mbimpute.origlibsize=t(ft.mbimputed$imp_count_mat_origlibsize)
+head(ft.mbimpute.origlibsize[,1:5])
 ```
 
 ## Column 1 {data-width="300"}
@@ -208,13 +219,15 @@ css.pipeline<- function(data, mtdata){
 ```
 
 ```{r}
-ft.imputed.css = css.pipeline(ft.mbimpute.origlibsize, METADATA.annotdf)
+ft.css=css.pipeline(FEATURE_TABLE, METADATA.annotdf)
+ft.imp.css = css.pipeline(ft.mbimpute.origlibsize, METADATA.annotdf)
 ```
 Here we present, in order, results from CSS taking in input:
 1. raw data
 2. alr transformed data
 3. clr transformed data
 ```{r}
+head(ft.css[,1:5])
 head(ft.imp.css[,1:5])
 ```
 
@@ -233,11 +246,13 @@ gmpr.pipeline <- function(DATA){
 ```
 
 ```{r}
-ft.imputed.gmpr=gmpr.pipeline(ft.mbimpute.origlibsize)
-ft.clr.gmpr=gmpr.pipeline(FEATURE_TABLE)
-head(ft.imputed.gmpr[,1:5])
+ft.gmpr=gmpr.pipeline(FEATURE_TABLE)
+ft.imp.gmpr=gmpr.pipeline(ft.mbimpute.origlibsize)
+head(ft.gmpr[,1:5])
+head(ft.imp.gmpr[,1:5])
 ```
-
+### Comparison
+We noticed that the percentage of zeros in data matters in how and which methods to choose. In our data, we have a high percentage of zeros (%77) and referencing the paper Chen, Li et al. “GMPR: A robust normalization method for zero-inflated count...” paper, it is mentioned that GMPR has a better result than CSS or RLE.
 
 # Differantial Abundance Methods
  
@@ -256,17 +271,24 @@ $\ast$ wi.eBH - Expected Benjamini-Hochberg corrected P value of Wilcoxon test
 
 ```{r}
 library(ALDEx2)
-aldex.imp.gmpr <- aldex(reads = ceiling(ft.imputed.gmpr), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
-aldex.imp.css<- aldex(reads = ceiling(ft.imputed.css), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
-## DA ANALYSIS
+aldex.imp.gmpr <- aldex(reads = ceiling(ft.imp.gmpr), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
+aldex.imp.css<- aldex(reads = ceiling(ft.imp.css), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
+```
+
+
+```{r}
 findDA <- function(data){
   qv=data$wi.eBH
   qv.largest=sort(unlist(qv))[which(sort(unlist(qv))>0.05)[1]-1]
   DA=data$wi.eBH <= qv.largest
   DA
 }
+
 DA.imp.gmpr <- findDA(aldex.imp.gmpr)
 DA.imp.css<- findDA(aldex.imp.css)
+
+sum(DA.imp.gmpr)
+sum(DA.imp.css)
 ```
 
 ### ANCOM-II
@@ -274,31 +296,14 @@ DA.imp.css<- findDA(aldex.imp.css)
 The method is not available in R, but you can download it from [GitHub](https://github.com/FrederickHuangLin/ANCOM) A copy is on stem. 
 
 ```{r message = FALSE}
-#install_github("FrederickHuangLin/ANCOM")
-#library("ancom")
 source("ancom.R")
 ```
 
-There are 2 functions
-*feature_table_pre_process* implements the preprocessing 
-
-* ***feature_table:*** Data.frame or count matrix with taxa on rows
-* ***meta_data:*** Data.frame or matrix of metadata
-* ***sample_var:*** name of the column in meta_data with samples IDs.
-* ***group_var:*** Nname of the column in meta_data with
-* ***out_cut:*** number between 0 and 1. Observations below *out_cut* will be considered outliers zeros 
-* ***zero_cut:*** number between 0 and 1. This is parameter h used to further define the outlier zeros
-* ***lib_cut:*** samples with seq depth lower than lib_cut are excluded from the analysis
-* ***neg_lb:*** neg_lb = FALSE considers biological 0 (structural 0) only counts that are 0 acroos all samples within one group. If TRUE also small values are considered as 0.
-
 
 ```{r}
-# data.frame metadata
-
-# Preprocessing degli zeri di ANCOM-II
-# (alcuni parametri non hanno default-->settati con i default di ANCOM-BC)
 ancom.pipeline <- function(ft,METADATA){
   metadata<- data.frame("sample_id"=colnames(ft), "group"=METADATA$DiseaseState)
+  
   prepro<- feature_table_pre_process(
     feature_table = ft
     , meta_data = metadata 
@@ -309,6 +314,7 @@ ancom.pipeline <- function(ft,METADATA){
     , lib_cut = 1000
     , neg_lb = T
     )
+  
   prepro.data<- prepro$feature_table
   prepro.meta_data<- prepro$meta_data
   prepro.struc_zero<- prepro$structure_zeros
@@ -322,143 +328,106 @@ ancom.pipeline <- function(ft,METADATA){
     , alpha = 0.05)
   ancom_results
 }
-
- 
-head(prepro)
 ```
 
-The output is a list:
-
-* ***feature_table:*** Data.frame or count matrix with taxa on rows
-* ***meta_data:*** Data.frame or matrix of metadata
-* ***structure_zeros:*** matrix (taxa on rows and groups on columns) with 1 indicating that the corresponding taxon is a biological (i.e. structural) 0
-
-
 ```{r}
+ancom.imp.gmpr=ancom.pipeline(ft.imp.gmpr, METADATA)
+#ancom.imp.css=ancom.pipeline(ft.imp.css,METADATA) # not working
 ancom.raw=ancom.pipeline(FEATURE_TABLE,METADATA)
-#ancom.clr=ancom.pipeline(my.clr(FEATURE_TABLE),METADATA)
 ancom.gmpr=ancom.pipeline(ft.gmpr,METADATA)
-#ancom.gmpr.clr=ancom.pipeline(ft.gmpr.clr,METADATA)
-ancom.clr.gmpr=ancom.pipeline(ft.clr.gmpr,METADATA)
-#ancom.css=ancom.pipeline(ft.css,METADATA)
-#ancom.clr.css=ancom.pipeline(ft.clr.css,METADATA)
+#ancom.css=ancom.pipeline(ceiling(ft.css),METADATA) # not working
+
 
 sum(ancom.raw$out$detected_0.7)
 sum(ancom.gmpr$out$detected_0.7)
-sum(ancom.clr.gmpr$out$detected_0.7)
+#sum(ancom.css$out$detected_0.7) 
+#sum(ancom.imp.css$out$detected_0.7)
+sum(ancom.imp.gmpr$out$detected_0.7)
 
 ```
-The output is a list:
 
-* ***p_data:*** Matrix of p_values between taxa (pairwise)
-* ***q_data:*** Matrix of p_values between taxa (pairwise)
-* ***out:*** Data.frame with W statistics for each taxon. Columns indicates different cutoffs on W (0,9, 0,8, 0,7, 0,6). TRUE or FALSE indicate if the taxon pass the threshold (is DA)
-* ***fig:*** Volcano plot (ggplot object) of W vs CLR. 
-
+```{r}
+plot(ancom.raw$fig)
+```
+```{r}
+plot(ancom.gmpr$fig)
+```
+```{r}
+plot(ancom.imp.gmpr$fig)
+```
 
 ```{r ancom_volcano}
-plot(ancom_results$fig)
-ancom_results[[3]]
+ancom.raw$out
+ancom.gmpr$out
+ancom.imp.gmpr$out
+
 ```
 
 Let's analyze the statistic W
 
 ```{r W-statistic}
-
-W_stat<- ancom_results$out$W[is.finite(ancom_results$out$W)]
-n_taxa<- length(W_stat) 
-
-
-plot(ecdf(W_stat[is.finite(W_stat)]), main ="Empirical cumulative distribution function for W ", xlab = "W")
-abline(v = n_taxa*0.6, col = "red")
-abline(v = n_taxa*0.7, col = "blue")
-abline(v = n_taxa*0.8, col = "green")
-abline(v = n_taxa*0.9, col = "orange")
-legend(30, 1, legend=c("detected_06", "detected_07", "detected_08", "detected_09"), 
-       col=c("red", "blue", "green", "orange"), lty = 1)
+plotW <- function(data){
+  W_stat<- data$out$W[is.finite(data$out$W)]
+  n_taxa<- length(W_stat) 
+  
+  
+  plot(ecdf(W_stat[is.finite(W_stat)]), main ="Empirical cumulative distribution function for W ", xlab = "W")
+  abline(v = n_taxa*0.6, col = "red")
+  abline(v = n_taxa*0.7, col = "blue")
+  abline(v = n_taxa*0.8, col = "green")
+  abline(v = n_taxa*0.9, col = "orange")
+  legend(30, 1, legend=c("detected_06", "detected_07", "detected_08", "detected_09"), 
+         col=c("red", "blue", "green", "orange"), lty = 1)
+}
+plotW(ancom.raw)
+plotW(ancom.gmpr)
+plotW(ancom.imp.gmpr)
 ```
 
- Select which are DA
+
+### Conclusions
+Ancom removes taxa if considered outliers or DA because of a notable presence of zeroes in one of the groups. By applying imputation before DA analysis we can remove technical zeroes enhancing ANCOM performances.
+
+Looking at the different taxa identified as DA we can see that ANCOM run with war data and ANCOM run with GMPR normalized data gives almost the same results. Whether using mbImputed data the results are discordant (there are a total of 45 taxa considered DA in only one of the two run of ancom (ancom find around 60 DA taxa over the 166) )
 ```{r}
-indices.DA= which(W_stat>quantile(W_stat, probs=0.7))
+DA.withAllTaxa<- function(data, rn=rownames(FEATURE_TABLE)){
+  vector.taxa=as.vector(rep(FALSE,length(rn)))
+  listtaxa=rownames(FEATURE_TABLE)
+  
+  for(i in 1:length(data$out$taxa_id)){
+    vector.taxa[which(listtaxa==data$out$taxa_id[i])]=data$out$detected_0.7[i]
+  }
+  vector.taxa
+}
 ```
-
-### ANCON-II -- raw data
-```{r}
-# data.frame metadata
-
-# Preprocessing degli zeri di ANCOM-II
-# (alcuni parametri non hanno default-->settati con i default di ANCOM-BC)
-
-metadata<- data.frame("sample_id"=colnames(FEATURE_TABLE), "group"=METADATA$DiseaseState)
-prepro2<- feature_table_pre_process(
-  feature_table =  ft.gmpr
-  , meta_data = metadata 
-  , sample_var = "sample_id"
-  , group_var = "group"
-  , out_cut = 0.05
-  , zero_cut = 0.9
-  , lib_cut = 1000
-  , neg_lb = T
-  )
-head(prepro2)
-```
-
-
-In this case we detected more technical zeroes due to the fact that imputation was not previously done.
-
 
 ```{r}
-prepro2.data<- prepro2$feature_table
-prepro2.meta_data<- prepro2$meta_data
-prepro2.struc_zero<- prepro2$structure_zeros
-
-ancom_results2 <- ANCOM(
-  feature_table = prepro2.data
-  , meta_data = prepro2.meta_data
-  , struc_zero = prepro2.struc_zero
-  , main_var = "group"
-  , p_adj_method = "BH"
-  , alpha = 0.05)
-ancom_results2
-```
-The output is a list:
-
-* ***p_data:*** Matrix of p_values between taxa (pairwise)
-* ***q_data:*** Matrix of p_values between taxa (pairwise)
-* ***out:*** Data.frame with W statistics for each taxon. Columns indicates different cutoffs on W (0,9, 0,8, 0,7, 0,6). TRUE or FALSE indicate if the taxon pass the threshold (is DA)
-* ***fig:*** Volcano plot (ggplot object) of W vs CLR. 
-
-
-```{r ancom_volcano}
-plot(ancom_results2$fig)
-ancom_results2[[3]]
+DA.imp.gmpr.ancom=DA.withAllTaxa(ancom.imp.gmpr)
+DA.ancom=DA.withAllTaxa(ancom.raw)
+DA.gmpr.ancom=DA.withAllTaxa(ancom.gmpr)
+DA.imp.gmpr.ancom=DA.withAllTaxa(ancom.imp.gmpr)
 ```
 
-Let's analyze the statistic W
-
-```{r W-statistic}
-
-W_sta2t<- ancom_results2$out$W[is.finite(ancom_results2$out$W)]
-n_taxa2<- length(W_stat) 
-
-
-plot(ecdf(W_stat[is.finite(W_stat)]), main ="Empirical cumulative distribution function for W ", xlab = "W")
-abline(v = n_taxa2*0.6, col = "red")
-abline(v = n_taxa2*0.7, col = "blue")
-abline(v = n_taxa2*0.8, col = "green")
-abline(v = n_taxa2*0.9, col = "orange")
-legend(30, 1, legend=c("detected_06", "detected_07", "detected_08", "detected_09"), 
-       col=c("red", "blue", "green", "orange"), lty = 1)
-```
-
- Select which are DA
-```{r}
-indices.DA= which(W_stat>quantile(W_stat, probs=0.7))
-```
 
 # Conclusion
 ### DA
+We did the following experiments to see which combination of methods gave us a better result:
+
+mbimpute + GMPR + Aldex
+
+mbimpute + CSS + Aldex
+
+mbimpute + GMPR + ANCOM-II
+
+ANCOM-II
+
+GMPR + ANCOM-II
+
+Because ANCOM and ALDEX do CLR within their progress steps, we didn't apply CLR because more transformations might bias the results.
+
+A few combinations without mbimpute have been tried to see how it affects our metadata to find DA.
+
+Even in (mentioning the paper) we understood that GMPR works better than CSS, so we tried to use it as our normalization method rather than CSS.
 ```{r}
 sum(ancom_results$out$detected_0.7)
 sum(ancom_results2$out$detected_0.7)
@@ -466,101 +435,123 @@ sum(ancom_results2$out$detected_0.7)
 
 
 # Data Visualisation
-
-Based on the results obtained in [Part b](Part%20b), **select a set of DA taxa** and, based only on those taxa, **run `NMDS`, `t-sne` and `UMAP`** to project healthy donors and the patients on 2 dimension.
-
-> Are These plots equal to the ones obtained using all taxa instead of using only the DA?
-
-### tsne
-```{r}
-#BiocManager::install("M3C")
-library(M3C)
-indices=c(indices.DA, which(METADATA$DiseaseState=="H"))
-METADATA<-read.table("metadata_table.txt",sep="\t",header=T)
-tsne(DATA[,indices],labels=METADATA$DiseaseState[indices],perplex=50)
-# mydata:  Data frame or matrix: if dataframe/matrix should have samples as columns and rows as features
-# labels:  Character vector: if we want to just label with gender for example
-# perplex: Numerical value: perplexity value that Rtsne uses internally
-# ...
-```
+### All taxa
 
 ```{r}
-tsne(data_clr,labels=METADATA$DiseaseState,perplex=10)
-```
+# mbImpute gmpr aldex
+data=FEATURE_TABLE
+tsne(data,labels=METADATA$DiseaseState,perplex=10)
 
-```{r}
-tsne(imp_count_mat,labels=METADATA$DiseaseState,perplex=10)
-```
-
-```{r}
-tsne(impclr_count_mat,labels=METADATA$DiseaseState,perplex=10)
-tsne(data.gmprNormalized.clr[,indices],labels=METADATA$DiseaseState[indices],perplex=50)
-```
-
-
-### Umap
-
-```{r}
-#BiocManager::install("umap")
-library(umap)
-umap.defaults
-# help(umap.defaults)
-```
-
-
-```{r}
-#REMEMBER to TRANSPOSE THE MATRIX (IF NEEDED)samples to be projected must be on rows
-res.umap <- umap(t(DATA))
-head(res.umap$layout)
+res.umap <- umap(t(data))
 plot(res.umap$layout[,1],res.umap$layout[,2])
 indCDI<-which(METADATA$DiseaseState=="CDI")
 points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
-```
-
-```{r}
-res.umap <- umap(t(data_clr))
-head(res.umap$layout, 3)
-plot(res.umap$layout[,1],res.umap$layout[,2])
-indCDI<-which(METADATA$DiseaseState=="CDI")
-points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
-```
-
-```{r}
-res.umap <- umap(t(impclr_count_mat),n_neighbours=5, n_components=3)
-plot(res.umap$layout[,1],res.umap$layout[,2])
-points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
-
-plot(res.umap$layout[,1],res.umap$layout[,3])
-points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,3],col=2)
-
-plot(res.umap$layout[,2],res.umap$layout[,3])
-points(res.umap$layout[indCDI,2],res.umap$layout[indCDI,3],col=2)
-```
 
 
-### NMDS
-```{r}
-#BiocManager::install("vegan")
-library(vegan)
-
-res.nmds = metaMDS(t(imp_count_mat),distance="bray")
-
-#extract x and y coordinates and plot
+res.nmds = metaMDS(t(data),distance="bray")
 nmdsproj<-res.nmds$points
 plot(nmdsproj[,1],nmdsproj[,2])
 indCDI<-which(METADATA$DiseaseState=="CDI")
 points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+
+```
+### DA taxa
+```{r}
+# mbImpute gmpr aldex
+data=ft.imp.gmpr
+indices=DA.imp.gmpr
+tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
+
+res.umap <- umap(t(data[indices,]))
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+
+res.nmds = metaMDS(t(data[indices,]),distance="bray")
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+
+```
+```{r}
+# mbImpute css aldex
+data=ft.imp.css
+indices=DA.imp.css
+tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
+
+res.umap <- umap(t(data[indices,]))
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+
+res.nmds = metaMDS(t(data[indices,]),distance="bray")
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+
+```
+```{r}
+# mbImpute gmpr  ancom
+data=ft.imp.gmpr
+indices= DA.imp.gmpr.ancom
+tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
+
+res.umap <- umap(t(data[indices,]))
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+
+res.nmds = metaMDS(t(data[indices,]),distance="bray")
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+
+```
+```{r}
+# gmpr  ancom
+data=ft.gmpr
+indices= DA.gmpr.ancom
+tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
+
+res.umap <- umap(t(data[indices,]))
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
+
+
+res.nmds = metaMDS(t(data[indices,]),distance="bray")
+nmdsproj<-res.nmds$points
+plot(nmdsproj[,1],nmdsproj[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+
 ```
 
 ```{r}
-#BiocManager::install("vegan")
-library(vegan)
+# gmpr  ancom
+data=FEATURE_TABLE
+indices= DA.ancom
+tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
 
-res.nmds = metaMDS(t(impclr_count_mat),distance="euclidean")
+res.umap <- umap(t(data[indices,]))
+plot(res.umap$layout[,1],res.umap$layout[,2])
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
+points(res.umap$layout[indCDI,1],res.umap$layout[indCDI,2],col=2)
 
-#extract x and y coordinates and plot
+
+res.nmds = metaMDS(t(data[indices,]),distance="bray")
 nmdsproj<-res.nmds$points
 plot(nmdsproj[,1],nmdsproj[,2])
-indCDI<-which(METADATA$DiseaseState=="CDI")
+indCDI<-which(METADATA$DiseaseState[indices]=="CDI")
 points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
+
 ```
+
+
+
