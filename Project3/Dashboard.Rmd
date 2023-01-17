@@ -1,9 +1,9 @@
 ---
 title: "Group3 -- Ex3"
-output: html_document
+output: 
+  flexdashboard::flex_dashboard:
+  orientation: columns
 ---
-#flexdashboard::flex_dashboard:
-#orientation: columns
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
@@ -11,24 +11,24 @@ knitr::opts_chunk$set(warning = FALSE)
 
 
 ```{r include = FALSE}
-if (!requireNamespace("devtools", quietly = TRUE))  install.packages("devtools")
+#if (!requireNamespace("devtools", quietly = TRUE))  install.packages("devtools")
 library(devtools)
 
-if (!requireNamespace("BiocManager", quietly = TRUE))  install.packages("BiocManager")
-if (!requireNamespace("metagenomeSeq", quitely = TRUE )) BiocManager::install("metagenomeSeq")
+#if (!requireNamespace("BiocManager", quietly = TRUE))  install.packages("BiocManager")
+#if (!requireNamespace("metagenomeSeq", quitely = TRUE )) BiocManager::install("metagenomeSeq")
 library(metagenomeSeq)
-if (!requireNamespace("GUniFrac", quietly = TRUE))  install.packages("GUniFrac")
+#if (!requireNamespace("GUniFrac", quietly = TRUE))  install.packages("GUniFrac")
 library(GUniFrac)
-if (!requireNamespace("glmnet", quietly = TRUE))  install.packages("glmnet")
+#if (!requireNamespace("glmnet", quietly = TRUE))  install.packages("glmnet")
 library(glmnet)
-if (!requireNamespace("Matrix", quietly = TRUE))  install.packages("Matrix")
+#if (!requireNamespace("Matrix", quietly = TRUE))  install.packages("Matrix")
 library(Matrix)
-if (!requireNamespace("mbImpute", quietly = TRUE))  install_github("ruochenj/mbImpute/mbImpute R package")
+#if (!requireNamespace("mbImpute", quietly = TRUE))  install_github("ruochenj/mbImpute/mbImpute R package")
 library(mbImpute)
-if(!require(compositions)) install.packages(compositions)
+#if(!require(compositions)) install.packages(compositions)
 library(compositions)
 library(parallel)
-if(!requireNamespace("GMPR",quitely = TRUE)) install_github("lichen-lab/GMPR")
+#if(!requireNamespace("GMPR",quitely = TRUE)) install_github("lichen-lab/GMPR")
 library(GMPR)
 #BiocManager::install("M3C")
 library(M3C)
@@ -55,7 +55,7 @@ This dashboard covers:
 # Data
 ## Column 1
 
-```{r,quiet=TRUE}
+```{r,include=FALSE}
 FEATURE_TABLE.filename="Genus_otu_table.txt"
 FEATURE_TABLE=as.matrix(read.table(FEATURE_TABLE.filename, sep = "\t"))
 ft=FEATURE_TABLE
@@ -65,7 +65,7 @@ METADATA=read.table(METADATA.filename, header = TRUE, sep ="\t", row.names = 1)
 METADATA.annotdf=as(METADATA,"AnnotatedDataFrame")
 
 tot_zeros<- sum(FEATURE_TABLE==0)
-paste("Sparsity =", round(tot_zeros/length(FEATURE_TABLE)*100, digits = 1))
+sparsity = round(tot_zeros/length(FEATURE_TABLE)*100, digits = 1)
 ```
 ### OTU counts
 OTU count table sourced from file `r FEATURE_TABLE.filename`. 
@@ -73,6 +73,7 @@ It contains 166 Samples and 245 features (represented by taxa_id).
 ```{r echo = FALSE}
 head(FEATURE_TABLE[,1:5])
 ```
+Sparsity is `r sparsity`
 
 ### METADATA
 We have also a metadata file (`r METADATA.filename`) 
@@ -89,20 +90,18 @@ $${\displaystyle \operatorname {alr} (x)=\left(\log {\frac {x_{1}}{x_{D}}}\right
 
 ```{r}
 my.alr <- function (data){
-  # select reference | 
   is.ok = data>0 & is.finite(data)
   data = ifelse(is.ok, data, NA)
 
+  # select reference (lowest number of zeroes)
   num.zero = apply(is.na(data),MARGIN=1,FUN=sum) #Count number of zeroes by row
   r = which.min(num.zero)                    #Index corresponding to row with lowest number of zeroes
-  #cat(sprintf("Reference taxa is the %d (%s) with %d zero \n\n",r, rownames(DATA)[r],  num.zero[r])) 
   
   out=data
-  #problem we haven't a taxa present in all the sample we have to replace 0's with 1's. Also, I am going to     use as reference the one with lower number of 0's 
   for (i in 1:ncol(data)){
     out[,i]=log(data[,i] / data[r,i]) 
   }
-  out[is.na(out)]=-Inf # TODO replace "replace NA" with "replace 0" where !is.ok
+  out[is.na(out)]=-Inf 
   return(out)
 }
 
@@ -111,12 +110,10 @@ myalr.findreference <- function(DATA){
   r = which.min(num.zero)
   r[1]
 }
+
+head(alr(ft)[,1:5])
 ```
 
-```{r}
-head(alr(ft)[,1:5])
-num.zero = rowSums(FEATURE_TABLE==0)
-```
 
 
 ### Central Log Ratio clr
@@ -141,7 +138,6 @@ my.clr <- function (data){
 ```
 
 ```{r}
-#ft.clr=as.matrix(my.clr(FEATURE_TABLE))
 ft.clr=as.matrix(t(clr(t(FEATURE_TABLE))))
 colnames(ft.clr)=colnames(FEATURE_TABLE)
 rownames(ft.clr)=rownames(FEATURE_TABLE)
@@ -169,8 +165,8 @@ mbimpute.pipeline<- function(DATA,METADATA, unnormalized=T){
     , parallel = TRUE, ncores=detectCores() )
   mbImpute.matrices
 }
-ft.mbimputed=mbimpute.pipeline(FEATURE_TABLE,METADATA)
-
+#ft.mbimputed=mbimpute.pipeline(FEATURE_TABLE,METADATA) 
+# TODO remove comment if you want to compute imputation 
 
 ```
 
@@ -183,7 +179,12 @@ The final result of the mbImpute function will output an imputed matrix of dimen
 In particular will be produced three matrices:
 `imp_count_mat_lognorm`: imputed normalized and log transformed matrix
 ```{r}
-ft.mbimpute.origlibsize=t(ft.mbimputed$imp_count_mat_origlibsize)
+#ft.mbimpute.origlibsize=t(ft.mbimputed$imp_count_mat_origlibsize)
+
+ft.mbimpute.origlibsize=read.csv("mbimpute_origls.csv")
+rownames(ft.mbimpute.origlibsize)=ft.mbimpute.origlibsize[,1]
+ft.mbimpute.origlibsize=ft.mbimpute.origlibsize[,-1]
+
 head(ft.mbimpute.origlibsize[,1:5])
 ```
 
@@ -200,10 +201,10 @@ authors) presents a bug:
 We ingested mbImputed with unnormalized data and proceeded with transformation (clr) and normalization after the imputation.
 
 # Normalization
-
+## 
 ### Cumulative Sum Scaling CSS
-CSS with clr transformed data does not work well since it produces many NaN values, even where not originally present in the clr transformed data. So we decided to not 
-```{r echo=FALSE}
+CSS with clr transformed data does not work well since it produces many NaN values, even where not originally present in the clr transformed data. So we decided to not use it
+```{r}
 css.pipeline<- function(data, mtdata){
   metaSeqObject = newMRexperiment(data,phenoData = mtdata) #samples on the column and row has to be the feature
   metaSeqObject_CSS  = cumNorm( metaSeqObject , p = cumNormStatFast(metaSeqObject) )
@@ -219,7 +220,6 @@ ft.imp.css = css.pipeline(ft.mbimpute.origlibsize, METADATA.annotdf)
 Here we present, in order, results from CSS taking in input:
 1. raw data
 2. alr transformed data
-3. clr transformed data
 ```{r}
 head(ft.css[,1:5])
 head(ft.imp.css[,1:5])
@@ -250,6 +250,7 @@ We noticed that the percentage of zeros in data matters in how and which methods
 
 # Differantial Abundance Methods
  
+## Column 2 {data-width="700"}
 ### ALDEx2
 $\diamondsuit$ rab.all - median clr value for all samples in the feature
 $\diamondsuit$ rab.win.NS - median clr value for the NS group of samples
@@ -380,6 +381,7 @@ plotW(ancom.imp.gmpr)
 ```
 
 
+## Column 1 {data-width="300"}
 ### Conclusions
 Ancom removes taxa if considered outliers or DA because of a notable presence of zeroes in one of the groups. By applying imputation before DA analysis we can remove technical zeroes enhancing ANCOM performances.
 
@@ -405,14 +407,20 @@ DA.gmpr.ancom=DA.withAllTaxa(ancom.gmpr)
 DA.imp.gmpr.ancom=DA.withAllTaxa(ancom.imp.gmpr)
 ```
 
-```{r}
+```{r, include=FALSE}
 JacSim<- function(dat1,dat2){
   sum(dat1 & dat2)/sum(dat1 | dat2)
 }
-
-
-
+js1=JacSim(DA.ancom, DA.imp.gmpr.ancom)
+js2=JacSim(DA.ancom,DA.gmpr.ancom)
+js3=JacSim(DA.imp.css,DA.imp.gmpr)
+js4=JacSim(DA.imp.gmpr,DA.imp.gmpr.ancom)
 ```
+Jaccard similarity between DA taxa are:
+* `r js1` in ancom, between Raw data and imputer-GMPR data
+* `r js2` in ancom, between Raw data and GMPR normalized data
+* `r js3` in aldex, between imputed-css and imputed-GMPR data
+* `r js4` using imputed and GMPR normalized data, between aldex and ancom results
 
 # Conclusion
 ### DA
@@ -439,8 +447,9 @@ Even in (mentioning the paper) we understood that GMPR works better than CSS, so
 ### All taxa
 
 ```{r}
-# mbImpute gmpr aldex
+# raw data, all taxa
 data=FEATURE_TABLE
+
 tsne(data,labels=METADATA$DiseaseState,perplex=10)
 
 res.umap <- umap(t(data))
@@ -535,7 +544,7 @@ points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
 ```
 
 ```{r}
-# gmpr  ancom
+# raw ancom
 data=FEATURE_TABLE
 indices= DA.ancom
 tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
