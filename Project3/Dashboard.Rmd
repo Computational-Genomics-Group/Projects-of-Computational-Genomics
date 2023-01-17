@@ -1,9 +1,15 @@
 ---
 title: "Group3 -- Ex3"
-output: 
-  flexdashboard::flex_dashboard:
-  orientation: columns
+output:
+  html_document:
+    df_print: paged
 ---
+```{r include=F}
+# Possible different layout 
+#flexdashboard::flex_dashboard:
+#orientation: columns
+#vertical_layout: scroll
+```
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
@@ -36,24 +42,12 @@ library(M3C)
 library(umap)
 #BiocManager::install("vegan")
 library(vegan)
+library(ALDEx2)
+library(knitr)
 ```
 
-# Intro {.sidebar}
-
-This dashboard covers:
-
--   Data descirption
-
--   Description Transformations with different reusults
-
--   Cumulative Sum Scaling (CSS) and Geometric Mean of Pairwise Ratios (GMPR)
-
--   Zero imputation with mbImpute
-
--   DA analysis
 
 # Data
-## Column 1
 
 ```{r,include=FALSE}
 FEATURE_TABLE.filename="Genus_otu_table.txt"
@@ -67,7 +61,7 @@ METADATA.annotdf=as(METADATA,"AnnotatedDataFrame")
 tot_zeros<- sum(FEATURE_TABLE==0)
 sparsity = round(tot_zeros/length(FEATURE_TABLE)*100, digits = 1)
 ```
-### OTU counts
+## OTU counts
 OTU count table sourced from file `r FEATURE_TABLE.filename`. 
 It contains 166 Samples and 245 features (represented by taxa_id).
 ```{r echo = FALSE}
@@ -75,16 +69,14 @@ head(FEATURE_TABLE[,1:5])
 ```
 Sparsity is `r sparsity`
 
-### METADATA
+## METADATA
 We have also a metadata file (`r METADATA.filename`) 
 ```{r echo = FALSE, results = 'asis'}
-library(knitr)
 kable(METADATA[1:5,])
 ```
 
 # Isomorphism
-##
-### Additive Log Ratio (alr)
+## Additive Log Ratio (alr)
 
 $${\displaystyle \operatorname {alr} (x)=\left(\log {\frac {x_{1}}{x_{D}}}\right)_i}$$
 
@@ -116,7 +108,7 @@ head(alr(ft)[,1:5])
 
 
 
-### Central Log Ratio clr
+## Central Log Ratio clr
 
 $${\displaystyle clr(x)=\left(\log x_i-\frac 1 {nt} \sum_{j=1}^{nt}\log x_j\right)_i=\log\left(\frac{x_i}{\left(\Pi_{j=1}^{nt}x_j\right)^\frac1{nt}}\right)_i}$$
 
@@ -143,16 +135,15 @@ colnames(ft.clr)=colnames(FEATURE_TABLE)
 rownames(ft.clr)=rownames(FEATURE_TABLE)
 head(ft.clr[,1:5])
 ```
-### Comparison with original data
-From this small sample we can clearly see that clr better represents our data: similar counts in the original data table are similarly represented in clr whether alr presents some incongrouences. One notable example is that, in $s_3$, $tax_36$ and $tax_73$ magnitudes are inverted ($tax\_36<tax\_73$ in original data and in clr but $tax\_36>tax\_73$ in alr). Clr works better than alt in count table with high sparsity
+## Comparison with original data
+From this small sample we can clearly see that clr better represents our data: similar counts in the original data table are similarly represented in clr whether alr presents some incongrouences. One notable example is that, in $s_3$, $tax\_36$ and $tax\_73$ magnitudes are inverted ($tax\_36<tax\_73$ in original data and in clr but $tax\_36>tax\_73$ in alr). Clr works better than alt in count table with high sparsity
 
 
 Since both ALDEx2 and ANCOM perform clr automatically, we did not perform this type of transformation before applying the two algorithms, it would introduce bias.
 
 # Zero Imputation
-## Column 2 {data-width="700"}
 
-### How it works 
+## How it works 
 
 
 ```{r}
@@ -176,8 +167,7 @@ In order to achieve our goal, we will borrow information from covariate matrix o
 
 The final result of the mbImpute function will output an imputed matrix of dimension n * m, which is exactly the same dimension as the input.
 
-In particular will be produced three matrices:
-`imp_count_mat_lognorm`: imputed normalized and log transformed matrix
+In particular will be produced three matrices but we consider only the one which preserve the original lib size
 ```{r}
 #ft.mbimpute.origlibsize=t(ft.mbimputed$imp_count_mat_origlibsize)
 
@@ -188,21 +178,18 @@ ft.mbimpute.origlibsize=ft.mbimpute.origlibsize[,-1]
 head(ft.mbimpute.origlibsize[,1:5])
 ```
 
-## Column 1 {data-width="300"}
 
-### Problems
+## Problems
 
-Code provided in the github repository `ruochenj/mbImpute` (from the original 
-authors) presents a bug:
+Code provided in the github repository `ruochenj/mbImpute` (from the original authors) presents a bug:
 * if provided normalized data (`unnormalized=FALSE`) mbImpute will not scale data. This lead to incorrect imputation. 
 
 
-### Compromise
-We ingested mbImputed with unnormalized data and proceeded with transformation (clr) and normalization after the imputation.
+## Compromise
+We ingested mbImputed with unnormalized data and proceeded with normalization after the imputation.
 
 # Normalization
-## 
-### Cumulative Sum Scaling CSS
+## Cumulative Sum Scaling CSS
 CSS with clr transformed data does not work well since it produces many NaN values, even where not originally present in the clr transformed data. So we decided to not use it
 ```{r}
 css.pipeline<- function(data, mtdata){
@@ -226,7 +213,7 @@ head(ft.imp.css[,1:5])
 ```
 
 
-### Geometric Mean Pairwise Ratios (GMPR)
+## Geometric Mean Pairwise Ratios (GMPR)
 
 ```{r}
 gmpr.pipeline <- function(DATA){
@@ -245,27 +232,13 @@ ft.imp.gmpr=gmpr.pipeline(ft.mbimpute.origlibsize)
 head(ft.gmpr[,1:5])
 head(ft.imp.gmpr[,1:5])
 ```
-### Comparison
+## Comparison
 We noticed that the percentage of zeros in data matters in how and which methods to choose. In our data, we have a high percentage of zeros (%77) and referencing the paper Chen, Li et al. “GMPR: A robust normalization method for zero-inflated count...” paper, it is mentioned that GMPR has a better result than CSS or RLE.
 
 # Differantial Abundance Methods
  
-## Column 2 {data-width="700"}
-### ALDEx2
-$\diamondsuit$ rab.all - median clr value for all samples in the feature
-$\diamondsuit$ rab.win.NS - median clr value for the NS group of samples
-$\diamondsuit$ rab.win.S - median clr value for the S group of samples
-$\diamondsuit$ dif.btw - median difference in clr values between S and NS groups
-$\diamondsuit$ dif.win - median of the largest difference in clr values within S and NS groups
-$\diamondsuit$ effect - median effect size: diff.btw / max(diff.win) for all instances
-$\diamondsuit$ overlap - proportion of effect size that overlaps 0 (i.e. no effect)
-$\ast$ we.ep - Expected P value of Welch's t test
-$\ast$ we.eBH - Expected Benjamini-Hochberg corrected P value of Welch's t test
-$\ast$ wi.ep - Expected P value of Wilcoxon rank test
-$\ast$ wi.eBH - Expected Benjamini-Hochberg corrected P value of Wilcoxon test
-
-```{r, quiet=TRUE}
-library(ALDEx2)
+## ALDEx2
+```{r,echo=FALSE,results='hide'}
 aldex.imp.gmpr <- aldex(reads = ceiling(ft.imp.gmpr), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
 aldex.imp.css<- aldex(reads = ceiling(ft.imp.css), conditions =METADATA$DiseaseState, mc.samples = 128, test = "t")
 ```
@@ -273,23 +246,28 @@ aldex.imp.css<- aldex(reads = ceiling(ft.imp.css), conditions =METADATA$DiseaseS
 
 ```{r, quiet=TRUE}
 findDA <- function(data){
+  # find biggest q-value q' smaller than 0.05
+  # all q-value smaller than q' are considered DA
   qv=data$wi.eBH
   qv.largest=sort(unlist(qv))[which(sort(unlist(qv))>0.05)[1]-1]
   DA=data$wi.eBH <= qv.largest
   DA
 }
 
-DA.imp.gmpr <- findDA(aldex.imp.gmpr)
-DA.imp.css<- findDA(aldex.imp.css)
+DA.imp.gmpr.aldex <- findDA(aldex.imp.gmpr)
+DA.imp.css.aldex<- findDA(aldex.imp.css)
 ```
 
 
-```{r}
-sum(DA.imp.gmpr)
-sum(DA.imp.css)
+```{r, include=FALSE}
+s1=sum(DA.imp.gmpr.aldex)
+s2=sum(DA.imp.css.aldex)
 ```
+Number of DA taxa from Aldex using:
+* imputed, GMPR normalized data is `r s1`
+* imputed, CSS normalized data is `r s2`
 
-### ANCOM-II
+## ANCOM-II
 
 The method is not available in R, but you can download it from [GitHub](https://github.com/FrederickHuangLin/ANCOM) A copy is on stem. 
 
@@ -328,10 +306,10 @@ ancom.pipeline <- function(ft,METADATA){
 }
 ```
 
-```{r, quiet=TRUE}
-ancom.imp.gmpr=ancom.pipeline(ft.imp.gmpr, METADATA)
-ancom.raw=ancom.pipeline(FEATURE_TABLE,METADATA)
-ancom.gmpr=ancom.pipeline(ft.gmpr,METADATA)
+```{r,echo=FALSE,results='hide'}
+ancom.imp.gmpr=ancom.pipeline(ft.imp.gmpr, METADATA);
+ancom.raw=ancom.pipeline(FEATURE_TABLE,METADATA);
+ancom.gmpr=ancom.pipeline(ft.gmpr,METADATA);
 ```
 
 
@@ -339,7 +317,6 @@ ancom.gmpr=ancom.pipeline(ft.gmpr,METADATA)
 sum(ancom.raw$out$detected_0.7)
 sum(ancom.gmpr$out$detected_0.7)
 sum(ancom.imp.gmpr$out$detected_0.7)
-
 ```
 
 ```{r}
@@ -359,7 +336,6 @@ ancom.imp.gmpr$out
 
 ```
 
-Let's analyze the statistic W
 
 ```{r W-statistic}
 plotW <- function(data){
@@ -375,14 +351,17 @@ plotW <- function(data){
   legend(30, 1, legend=c("detected_06", "detected_07", "detected_08", "detected_09"), 
          col=c("red", "blue", "green", "orange"), lty = 1)
 }
+```
+
+
+```{r}
 plotW(ancom.raw)
 plotW(ancom.gmpr)
 plotW(ancom.imp.gmpr)
 ```
 
 
-## Column 1 {data-width="300"}
-### Conclusions
+## Conclusions
 Ancom removes taxa if considered outliers or DA because of a notable presence of zeroes in one of the groups. By applying imputation before DA analysis we can remove technical zeroes enhancing ANCOM performances.
 
 Looking at the different taxa identified as DA we can see that ANCOM run with raw data and ANCOM run with GMPR normalized data gives almost the same results. Whether using mbImputed data the results are discordant (there are a total of 45 taxa considered DA in only one of the two run of ancom (ancom find around 60 DA taxa over the 166).
@@ -413,8 +392,8 @@ JacSim<- function(dat1,dat2){
 }
 js1=JacSim(DA.ancom, DA.imp.gmpr.ancom)
 js2=JacSim(DA.ancom,DA.gmpr.ancom)
-js3=JacSim(DA.imp.css,DA.imp.gmpr)
-js4=JacSim(DA.imp.gmpr,DA.imp.gmpr.ancom)
+js3=JacSim(DA.imp.css.aldex,DA.imp.gmpr.aldex)
+js4=JacSim(DA.imp.gmpr.aldex,DA.imp.gmpr.ancom)
 ```
 Jaccard similarity between DA taxa are:
 * `r js1` in ancom, between Raw data and imputer-GMPR data
@@ -423,7 +402,7 @@ Jaccard similarity between DA taxa are:
 * `r js4` using imputed and GMPR normalized data, between aldex and ancom results
 
 # Conclusion
-### DA
+## DA
 We did the following experiments to see which combination of methods gave us a better result:
 
 mbimpute + GMPR + Aldex
@@ -438,13 +417,13 @@ GMPR + ANCOM-II
 
 Because ANCOM and ALDEX do CLR within their progress steps, we didn't apply CLR because more transformations might bias the results.
 
-A few combinations without mbimpute have been tried to see how it affects our metadata to find DA.
+A few combinations without mbImpute have been tried to see how it affects our metadata to find DA.
 
 Even in (mentioning the paper) we understood that GMPR works better than CSS, so we tried to use it as our normalization method rather than CSS.
 
 
 # Data Visualisation
-### All taxa
+## All taxa
 
 ```{r}
 # raw data, all taxa
@@ -465,11 +444,11 @@ indCDI<-which(METADATA$DiseaseState=="CDI")
 points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
 
 ```
-### DA taxa
+## DA taxa
 ```{r}
 # mbImpute gmpr aldex
 data=ft.imp.gmpr
-indices=DA.imp.gmpr
+indices=DA.imp.gmpr.aldex
 tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
 
 res.umap <- umap(t(data[indices,]))
@@ -488,7 +467,7 @@ points(nmdsproj[indCDI,1],nmdsproj[indCDI,2],col=2)
 ```{r}
 # mbImpute css aldex
 data=ft.imp.css
-indices=DA.imp.css
+indices=DA.imp.css.aldex
 tsne(data[,indices],labels=METADATA$DiseaseState[indices],perplex=10)
 
 res.umap <- umap(t(data[indices,]))
